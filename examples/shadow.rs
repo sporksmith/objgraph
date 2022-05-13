@@ -57,6 +57,8 @@ pub fn main() {
     let hosts = worker.join().unwrap();
     println!("worker done as expected");
 
+    // Uncomment to see a panic.
+    /* 
     // While a RootedRc can "escape", we'll get a panic if the reference count
     // is manipulated without the corresponding host lock being held.
     let escaped_descriptor = {
@@ -66,4 +68,5 @@ pub fn main() {
 
     println!("We now own an escaped descriptor. We will next panic because of dropping it without the lock held.");
     drop(escaped_descriptor);
+    */
 }
