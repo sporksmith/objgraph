@@ -10,21 +10,23 @@ use std::{
     },
 };
 
-/// Every object root is assigned a unique Tag.
+/// Every object root is assigned a Tag, which we enforce is globally unique.
 type Tag = u64;
 type AtomicTag = AtomicU64;
 
-/// Typically makes sense to have one super-root per object graph root type, but
-/// not required. Typically a global.
+/// For simplicity we have a single SUPER_ROOT, which enforces uniqueness of
+/// `Tag`s.
+///
+/// It'd probably be a little nicer to let crate-users provide their own
+/// `SuperRoot`, but then we need a bit more tracking and checking to ensure
+/// we're not comparing tags from different `SuperRoot`s.
+///
+/// Conversely, since tags are 64 bits, multiple users of this crate shouldn't
+/// interfere with eachother. At worst maybe there could be contention for the
+/// underlying `Atomic`?
 struct SuperRoot {
     next_tag: AtomicTag,
 }
-
-/// For simplicity we have a single SUPER_ROOT. Since tags are 64 bits,
-/// multiple users of this crate shouldn't interfere with eachother.
-///
-/// TODO: Probably better for user to provide a super root, but then
-/// need more consistency checks that objects were made via the same super root.
 static SUPER_ROOT: SuperRoot = SuperRoot::new();
 
 impl SuperRoot {
@@ -39,13 +41,23 @@ impl SuperRoot {
     }
 }
 
-/// This could be made a bit more efficient by storing a single Option<Tag>
-/// instead of a HashSet. Crate user would need to be able to supply their own
-/// tracker in that case to avoid conflicts across users.
+/// Tracks which `Tag`s (and hence which `Root`s) are locked by the current thread.
+///
+/// Again it might be nicer to let crate users provide their own. In that case
+/// we could probably also simplify the implementation to just store an
+/// `Option<Tag>`, avoiding the overhead of the `HashSet` in cases where it's
+/// unneeded.
+///
+/// To do that we'd again need some additional tracking to ensure we're checking
+/// the right object. This is made a bit more complex because typically this
+/// should be kept in a thread-local, which we can't really store references for
+/// elsewhere.
 struct ThreadRootTracker {
     current_tags: HashSet<Tag>,
-    // Force to *not* be Send nor Sync.
-    // Probably not strictly necessary while this struct is private.
+    // Force to *not* be Send nor Sync, since it tracks state of the *current
+    // thread*.
+    // Probably not strictly necessary while this struct is private, since we
+    // already only ever store instances in a thread-local.
     _phantom: std::marker::PhantomData<*mut std::ffi::c_void>,
 }
 
@@ -57,7 +69,7 @@ impl ThreadRootTracker {
         }
     }
 
-    pub fn has_tag(&self, tag: Tag) -> bool {
+    fn has_tag(&self, tag: Tag) -> bool {
         self.current_tags.contains(&tag)
     }
 
@@ -71,12 +83,15 @@ impl ThreadRootTracker {
 }
 
 thread_local! {
-    /// Must be unique per thread. Must be globally accessible... (or must it?)
+    /// Must be unique per thread. Must also be accessible by e.g.
+    /// `RootedRc::Drop`, which is easiest if it's in a thread-local.
     ///
     /// TODO: Add a way for crate-users to supply their own tracker.
     static THREAD_ROOT_TRACKER : RefCell<ThreadRootTracker> = RefCell::new(ThreadRootTracker::new());
 }
 
+/// Root of an "object graph". It holds a lock over the contents of the graph,
+/// and ensures tracks which tags are locked by the current thread.
 pub struct Root<T> {
     root: ManuallyDrop<Mutex<T>>,
     tag: Tag,
@@ -95,8 +110,9 @@ impl<T> Root<T> {
         GraphRootGuard::new(self.tag, lock)
     }
 
-    // TODO: do we need to expose tag? Or should things that need it take a reference to a Root?
-    // Maybe ok to expose tag if we make its internals opaque.
+    // TODO: Maybe avoid exposing the tag publicly, and/or make its type opaque?
+    // I don't think the current state allows users to break soundness; it's
+    // just leaking implementation details here a bit.
     pub fn tag(&self) -> Tag {
         self.tag
     }
@@ -107,16 +123,20 @@ impl<T> Drop for Root<T> {
         THREAD_ROOT_TRACKER.with(|t| {
             {
                 let mut t = t.borrow_mut();
-                // `root` is effectively locked while we're dropping it.
+                // `root` is effectively locked while we're dropping it, since
+                // we hold a mutable reference to it.
                 t.add_tag(self.tag);
             }
+            // We have to *not* hold the mutable borrow of the tracker while
+            // dropping the contents, since the contents Drop implementations
+            // may need to validate the tag, which requires they can get
+            // (immutable) borrows.
+            //
             // SAFETY: Nothing can access root in between this and `self` itself
             // being dropped.
             unsafe { ManuallyDrop::drop(&mut self.root) };
-            {
-                let mut t = t.borrow_mut();
-                t.clear_tag(self.tag);
-            }
+            let mut t = t.borrow_mut();
+            t.clear_tag(self.tag);
         })
     }
 }
@@ -154,6 +174,12 @@ impl<'a, T> DerefMut for GraphRootGuard<'a, T> {
     }
 }
 
+/// Analagous to `std::rc::Rc`; in particular like `Rc` and unlike
+/// `std::sync::Arc`, it doesn't perform any atomic operations internally (which
+/// are moderately expensive).
+///
+/// Unlike `Rc`, this type `Send` and `Sync` if `T` is. It leverages lock-tracking
+/// to ensure `Rc` operations are protected.
 pub struct RootedRc<T> {
     tag: Tag,
     val: ManuallyDrop<Rc<T>>,
