@@ -78,14 +78,14 @@ thread_local! {
 }
 
 pub struct Root<T> {
-    root: Mutex<T>,
+    root: ManuallyDrop<Mutex<T>>,
     tag: Tag,
 }
 
 impl<T> Root<T> {
     pub fn new(root: T) -> Self {
         Self {
-            root: std::sync::Mutex::new(root),
+            root: ManuallyDrop::new(std::sync::Mutex::new(root)),
             tag: SUPER_ROOT.next_tag(),
         }
     }
@@ -93,6 +93,31 @@ impl<T> Root<T> {
     pub fn lock(&self) -> GraphRootGuard<T> {
         let lock = self.root.lock().unwrap();
         GraphRootGuard::new(self.tag, lock)
+    }
+
+    // TODO: do we need to expose tag? Or should things that need it take a reference to a Root?
+    // Maybe ok to expose tag if we make its internals opaque.
+    pub fn tag(&self) -> Tag {
+        self.tag
+    }
+}
+
+impl <T> Drop for  Root<T> {
+    fn drop(&mut self) {
+        THREAD_ROOT_TRACKER.with(|t| {
+            {
+                let mut t = t.borrow_mut();
+                // `root` is effectively locked while we're dropping it.
+                t.add_tag(self.tag);
+            }
+            // SAFETY: Nothing can access root in between this and `self` itself
+            // being dropped.
+            unsafe { ManuallyDrop::drop(&mut self.root) };
+            {
+                let mut t = t.borrow_mut();
+                t.clear_tag(self.tag);
+            }
+        })
     }
 }
 
