@@ -102,7 +102,7 @@ impl<T> Root<T> {
     }
 }
 
-impl <T> Drop for  Root<T> {
+impl<T> Drop for Root<T> {
     fn drop(&mut self) {
         THREAD_ROOT_TRACKER.with(|t| {
             {
