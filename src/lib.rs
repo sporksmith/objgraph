@@ -11,8 +11,11 @@ use std::{
 };
 
 /// Every object root is assigned a Tag, which we enforce is globally unique.
-type Tag = u64;
-type AtomicTag = AtomicU64;
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct Tag(u64);
+
+#[derive(Debug)]
+struct AtomicTag(AtomicU64);
 
 /// For simplicity we have a single SUPER_ROOT, which enforces uniqueness of
 /// `Tag`s.
@@ -32,12 +35,12 @@ static SUPER_ROOT: SuperRoot = SuperRoot::new();
 impl SuperRoot {
     pub const fn new() -> Self {
         Self {
-            next_tag: AtomicTag::new(0),
+            next_tag: AtomicTag(AtomicU64::new(0)),
         }
     }
 
     fn next_tag(&self) -> Tag {
-        self.next_tag.fetch_add(1, Ordering::Relaxed)
+        Tag(self.next_tag.0.fetch_add(1, Ordering::Relaxed))
     }
 }
 
@@ -110,9 +113,7 @@ impl<T> Root<T> {
         GraphRootGuard::new(self.tag, lock)
     }
 
-    // TODO: Maybe avoid exposing the tag publicly, and/or make its type opaque?
-    // I don't think the current state allows users to break soundness; it's
-    // just leaking implementation details here a bit.
+    /// This root's globally unique tag.
     pub fn tag(&self) -> Tag {
         self.tag
     }
