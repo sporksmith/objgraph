@@ -241,4 +241,88 @@ impl<T> Deref for RootedRc<T> {
     }
 }
 
+#[cfg(test)]
+mod test_rooted_rc {
+    use std::thread;
+
+    use super::*;
+
+    #[test]
+    fn construct_and_drop() {
+        let root = Root::new(());
+        let _lock = root.lock();
+        let _ = RootedRc::new(root.tag(), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn drop_without_lock_panics() {
+        let root = Root::new(());
+        let _ = RootedRc::new(root.tag(), 0);
+    }
+
+    #[test]
+    fn send_to_worker_thread() {
+        let root = Root::new(());
+        let rc = RootedRc::new(root.tag(), 0);
+        thread::spawn(move || {
+            // Can access immutably without lock.
+            let _ = *rc + 2;
+            // Need lock to drop, since it mutates refcount.
+            let _lock = root.lock();
+            drop(rc)
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
+    fn send_to_worker_thread_and_retrieve() {
+        let root = Root::new(());
+        let rc = RootedRc::new(root.tag(), 0);
+        let root = thread::spawn(move || {
+            let _ = *rc;
+            let _lock = root.lock();
+            drop(rc);
+            drop(_lock);
+            root
+        })
+        .join()
+        .unwrap();
+        // Take the lock to drop rc
+        let _lock = root.lock();
+    }
+
+    #[test]
+    fn clone_to_worker_thread() {
+        let root = Root::new(());
+        let rc = RootedRc::new(root.tag(), 0);
+
+        // Create a clone of rc that we'll pass to worker thread.
+        let rc_thread = {
+            let _lock = root.lock();
+            rc.clone()
+        };
+
+        // Worker takes ownership of rc_thread and root;
+        // Returns ownership of root.
+        let root = thread::spawn(move || {
+            let _ = *rc_thread;
+            // Need lock to drop, since it mutates refcount.
+            let lock = root.lock();
+            drop(rc_thread);
+            drop(lock);
+            root
+        })
+        .join()
+        .unwrap();
+
+        // Take the lock to drop rc
+        {
+            let _lock = root.lock();
+            drop(rc);
+        }
+    }
+}
+
 // TODO: RootedRefCell.
