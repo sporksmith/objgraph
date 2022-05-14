@@ -1,3 +1,5 @@
+#![feature(thread_local)]
+
 use std::cell::RefCell;
 use std::{
     collections::HashSet,
@@ -56,7 +58,7 @@ impl SuperRoot {
 /// should be kept in a thread-local, which we can't really store references for
 /// elsewhere.
 struct ThreadRootTracker {
-    current_tags: HashSet<Tag>,
+    current_tags: Option<Tag>,
     // Force to *not* be Send nor Sync, since it tracks state of the *current
     // thread*.
     // Probably not strictly necessary while this struct is private, since we
@@ -65,26 +67,27 @@ struct ThreadRootTracker {
 }
 
 impl ThreadRootTracker {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            current_tags: HashSet::new(),
+            current_tags: None,
             _phantom: std::marker::PhantomData,
         }
     }
 
     fn has_tag(&self, tag: Tag) -> bool {
-        self.current_tags.contains(&tag)
+        self.current_tags == Some(tag)
     }
 
     fn add_tag(&mut self, tag: Tag) {
-        self.current_tags.insert(tag);
+        self.current_tags = Some(tag);
     }
 
     fn clear_tag(&mut self, tag: Tag) {
-        self.current_tags.remove(&tag);
+        self.current_tags.take();
     }
 }
 
+/*
 thread_local! {
     /// Must be unique per thread. Must also be accessible by e.g.
     /// `RootedRc::Drop`, which is easiest if it's in a thread-local.
@@ -92,6 +95,9 @@ thread_local! {
     /// TODO: Add a way for crate-users to supply their own tracker.
     static THREAD_ROOT_TRACKER : RefCell<ThreadRootTracker> = RefCell::new(ThreadRootTracker::new());
 }
+*/
+#[thread_local]
+static THREAD_ROOT_TRACKER : RefCell<ThreadRootTracker> = RefCell::new(ThreadRootTracker::new());
 
 /// Root of an "object graph". It holds a lock over the contents of the graph,
 /// and ensures tracks which tags are locked by the current thread.
@@ -121,24 +127,24 @@ impl<T> Root<T> {
 
 impl<T> Drop for Root<T> {
     fn drop(&mut self) {
-        THREAD_ROOT_TRACKER.with(|t| {
-            {
-                let mut t = t.borrow_mut();
-                // `root` is effectively locked while we're dropping it, since
-                // we hold a mutable reference to it.
-                t.add_tag(self.tag);
-            }
-            // We have to *not* hold the mutable borrow of the tracker while
-            // dropping the contents, since the contents Drop implementations
-            // may need to validate the tag, which requires they can get
-            // (immutable) borrows.
-            //
-            // SAFETY: Nothing can access root in between this and `self` itself
-            // being dropped.
-            unsafe { ManuallyDrop::drop(&mut self.root) };
-            let mut t = t.borrow_mut();
-            t.clear_tag(self.tag);
-        })
+        let mut t = THREAD_ROOT_TRACKER.borrow_mut();
+        //THREAD_ROOT_TRACKER.with(|t| {
+        //let mut t = t.borrow_mut();
+            // `root` is effectively locked while we're dropping it, since
+            // we hold a mutable reference to it.
+            t.add_tag(self.tag);
+        //};
+        drop(t);
+        // We have to *not* hold the mutable borrow of the tracker while
+        // dropping the contents, since the contents Drop implementations
+        // may need to validate the tag, which requires they can get
+        // (immutable) borrows.
+        //
+        // SAFETY: Nothing can access root in between this and `self` itself
+        // being dropped.
+        unsafe { ManuallyDrop::drop(&mut self.root) };
+        let mut t = THREAD_ROOT_TRACKER.borrow_mut();
+        t.clear_tag(self.tag);
     }
 }
 
@@ -150,14 +156,16 @@ pub struct GraphRootGuard<'a, T> {
 
 impl<'a, T> GraphRootGuard<'a, T> {
     fn new(tag: Tag, guard: MutexGuard<'a, T>) -> Self {
-        THREAD_ROOT_TRACKER.with(|t| t.borrow_mut().add_tag(tag));
+        let mut t = THREAD_ROOT_TRACKER.borrow_mut();
+        t.add_tag(tag);
         Self { tag, guard }
     }
 }
 
 impl<'a, T> Drop for GraphRootGuard<'a, T> {
     fn drop(&mut self) {
-        THREAD_ROOT_TRACKER.with(|t| t.borrow_mut().clear_tag(self.tag));
+        let mut t = THREAD_ROOT_TRACKER.borrow_mut();
+        t.clear_tag(self.tag);
     }
 }
 
@@ -197,24 +205,21 @@ impl<T> RootedRc<T> {
 
 impl<T> Clone for RootedRc<T> {
     fn clone(&self) -> Self {
-        THREAD_ROOT_TRACKER.with(|t| {
-            let t = t.borrow();
-            // Validate that the root is locked.
-            assert!(t.has_tag(self.tag));
-            // Continue holding a reference to the tracker while calling member
-            // methods, to ensure the lock isn't dropped while they're running.
-            Self {
-                tag: self.tag.clone(),
-                val: self.val.clone(),
-            }
-        })
+        let t = THREAD_ROOT_TRACKER.borrow();
+        // Validate that the root is locked.
+        assert!(t.has_tag(self.tag));
+        // Continue holding a reference to the tracker while calling member
+        // methods, to ensure the lock isn't dropped while they're running.
+        Self {
+            tag: self.tag.clone(),
+            val: self.val.clone(),
+        }
     }
 }
 
 impl<T> Drop for RootedRc<T> {
     fn drop(&mut self) {
-        THREAD_ROOT_TRACKER.with(|t| {
-            let t = t.borrow();
+        let t = THREAD_ROOT_TRACKER.borrow();
             // Validate that the root is locked.
             assert!(t.has_tag(self.tag));
             // We have to manually drop `val` while holding the reference
@@ -222,7 +227,6 @@ impl<T> Drop for RootedRc<T> {
             // SAFETY: Nothing can access val in between this and `self` itself
             // being dropped.
             unsafe { ManuallyDrop::drop(&mut self.val) };
-        })
     }
 }
 
