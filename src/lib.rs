@@ -1,3 +1,4 @@
+use rustc_hash::FxHasher;
 use std::cell::RefCell;
 use std::{
     collections::HashSet,
@@ -44,6 +45,19 @@ impl SuperRoot {
     }
 }
 
+/// Substitute hasher used with internal HashSet.
+/// We ~control keys, so prefer speed over DOS resistance.
+/// If we were worried, we could generate cryptographically strong tags;
+/// Tag generation is much less frequent than hash set lookups.
+struct MyBuildHasher {}
+impl std::hash::BuildHasher for MyBuildHasher {
+    type Hasher = FxHasher;
+
+    fn build_hasher(&self) -> Self::Hasher {
+        Self::Hasher::default()
+    }
+}
+
 /// Tracks which `Tag`s (and hence which `Root`s) are locked by the current thread.
 ///
 /// Again it might be nicer to let crate users provide their own. In that case
@@ -56,7 +70,7 @@ impl SuperRoot {
 /// should be kept in a thread-local, which we can't really store references for
 /// elsewhere.
 struct ThreadRootTracker {
-    current_tags: HashSet<Tag>,
+    current_tags: HashSet<Tag, MyBuildHasher>,
     // Force to *not* be Send nor Sync, since it tracks state of the *current
     // thread*.
     // Probably not strictly necessary while this struct is private, since we
@@ -67,7 +81,7 @@ struct ThreadRootTracker {
 impl ThreadRootTracker {
     pub fn new() -> Self {
         Self {
-            current_tags: HashSet::new(),
+            current_tags: HashSet::with_hasher(MyBuildHasher {}),
             _phantom: std::marker::PhantomData,
         }
     }
