@@ -9,7 +9,7 @@ struct Host {
 }
 
 struct Process {
-    descriptors: HashMap<u32, RootedRc<Descriptor>>,
+    descriptors: HashMap<u32, RootedRc<Host, Descriptor>>,
 }
 
 struct Descriptor {

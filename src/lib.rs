@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell, RefMut};
 use std::marker::PhantomData;
 use std::{
     mem::ManuallyDrop,
@@ -332,4 +332,147 @@ mod test_rooted_rc {
     }
 }
 
-// TODO: RootedRefCell.
+pub struct RootedRefCell<R, T> {
+    tag: Tag,
+    val: ManuallyDrop<RefCell<T>>,
+    _phantom: PhantomData<R>,
+}
+
+impl<R, T> RootedRefCell<R, T> {
+    pub fn new(tag: Tag, val: T) -> Self {
+        Self {
+            tag,
+            val: ManuallyDrop::new(RefCell::new(val)),
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn borrow<'a>(
+        &'a self,
+        root_guard: &'a GraphRootGuard<'a, R>,
+    ) -> RootedRefCellRef<'a, R, T> {
+        // Prove that the lock is held for this tag.
+        assert_eq!(root_guard.tag, self.tag);
+        // Borrow from the guard to ensure the lock can't be dropped.
+        RootedRefCellRef {
+            _root_guard: root_guard,
+            guard: self.val.borrow(),
+        }
+    }
+
+    pub fn borrow_mut<'a>(
+        &'a self,
+        root_guard: &'a GraphRootGuard<'a, R>,
+    ) -> RootedRefCellRefMut<'a, R, T> {
+        // Prove that the lock is held for this tag.
+        assert_eq!(root_guard.tag, self.tag);
+        // Borrow from the guard to ensure the lock can't be dropped.
+        RootedRefCellRefMut {
+            _root_guard: root_guard,
+            guard: self.val.borrow_mut(),
+        }
+    }
+}
+
+unsafe impl<R, T: Send> Send for RootedRefCell<R, T> {}
+// Does *not* require  T to be Sync, since we synchronize on the root lock.
+unsafe impl<R, T> Sync for RootedRefCell<R, T> {}
+
+impl<R, T> Drop for RootedRefCell<R, T> {
+    fn drop(&mut self) {
+        Root::<R>::THREAD_ROOT_TRACKER.with(|t| {
+            let t = t.borrow();
+            // Validate that the root is locked.
+            assert!(t.has_tag(self.tag));
+            // We have to manually drop `val` while holding the reference
+            // to the tracker to ensure the lock can't be released.
+            // SAFETY: Nothing can access val in between this and `self` itself
+            // being dropped.
+            unsafe { ManuallyDrop::drop(&mut self.val) };
+        })
+    }
+}
+
+pub struct RootedRefCellRef<'a, R, T> {
+    _root_guard: &'a GraphRootGuard<'a, R>,
+    guard: Ref<'a, T>,
+}
+
+impl<'a, R, T> Deref for RootedRefCellRef<'a, R, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.guard.deref()
+    }
+}
+
+pub struct RootedRefCellRefMut<'a, R, T> {
+    _root_guard: &'a GraphRootGuard<'a, R>,
+    guard: RefMut<'a, T>,
+}
+
+impl<'a, R, T> Deref for RootedRefCellRefMut<'a, R, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.guard.deref()
+    }
+}
+
+impl<'a, R, T> DerefMut for RootedRefCellRefMut<'a, R, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.guard.deref_mut()
+    }
+}
+
+#[cfg(test)]
+mod test_rooted_refcell {
+    use std::thread;
+
+    use super::*;
+
+    #[test]
+    fn construct_and_drop() {
+        let root = Root::new(());
+        let _lock = root.lock();
+        let _ = RootedRefCell::<(), _>::new(root.tag(), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn drop_without_lock_panics() {
+        let root = Root::new(());
+        let _ = RootedRc::<(), _>::new(root.tag(), 0);
+    }
+
+    #[test]
+    fn share_with_worker_thread() {
+        let root = Root::new(());
+        let rc = RootedRc::<(), _>::new(root.tag(), RootedRefCell::new(root.tag(), 0));
+        let root = {
+            let rc = {
+                let _lock = root.lock();
+                rc.clone()
+            };
+            thread::spawn(move || {
+                let lock = root.lock();
+                let mut borrow = rc.borrow_mut(&lock);
+                *borrow = 3;
+                // Drop rc with lock still held.
+                drop(borrow);
+                drop(rc);
+                drop(lock);
+                root
+            })
+            .join()
+            .unwrap()
+        };
+        // Lock root again ourselves to inspect and drop rc.
+        let lock = root.lock();
+        let borrow = rc.borrow(&lock);
+        assert_eq!(*borrow, 3);
+        drop(borrow);
+        drop(rc);
+        drop(lock);
+    }
+}
