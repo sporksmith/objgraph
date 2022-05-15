@@ -2,7 +2,7 @@
 
 use std::{rc::Rc, sync::Arc};
 
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion, black_box};
+use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
 use objgraph::{Root, RootedRc};
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -28,7 +28,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     {
         let mut group = c.benchmark_group("cross-core clone clone");
-        const N : usize = 10000;
+        const N: usize = 10000;
         group.bench_function("RootedRc", |b| {
             b.iter_batched(
                 || {
@@ -47,7 +47,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                         }
                         drop(_lock);
                         (root, core_ids, v)
-                    }).join().unwrap()
+                    })
+                    .join()
+                    .unwrap()
                 },
                 |(root, core_ids, v)| {
                     std::thread::spawn(move || {
@@ -60,7 +62,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                         }
                         // Drop v with lock still held.
                         drop(v);
-                    }).join().unwrap()
+                    })
+                    .join()
+                    .unwrap()
                 },
                 BatchSize::SmallInput,
             );
@@ -80,7 +84,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                             let _ = v.last().unwrap().clone();
                         }
                         (core_ids, v)
-                    }).join().unwrap()
+                    })
+                    .join()
+                    .unwrap()
                 },
                 |(core_ids, v)| {
                     std::thread::spawn(move || {
@@ -90,7 +96,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                                 let _ = rc.clone();
                             }
                         }
-                    }).join().unwrap()
+                    })
+                    .join()
+                    .unwrap()
                 },
                 BatchSize::SmallInput,
             );
