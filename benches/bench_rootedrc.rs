@@ -34,11 +34,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || {
                     std::thread::spawn(|| {
                         let root = Root::new(());
-                        let core_ids = core_affinity::get_core_ids().unwrap();
-                        let setup_core_id = core_ids[0];
-                        // Run test on a separate cpu. core_ids[1] might
-                        // be on the same core as 0 (hyperthreading), so skip to 2.
-                        let test_core_id = core_ids[2];
+                        let mut core_ids = core_affinity::get_core_ids().unwrap();
+                        // Exclude Current core from tests.
+                        let setup_core_id = core_ids.pop().unwrap();
                         core_affinity::set_for_current(setup_core_id);
                         let mut v = Vec::new();
                         let _lock = root.lock();
@@ -48,16 +46,20 @@ fn criterion_benchmark(c: &mut Criterion) {
                             let _ = v.last().unwrap().clone();
                         }
                         drop(_lock);
-                        (root, test_core_id, v)
+                        (root, core_ids, v)
                     }).join().unwrap()
                 },
-                |(root, test_core_id, v)| {
+                |(root, core_ids, v)| {
                     std::thread::spawn(move || {
-                        core_affinity::set_for_current(test_core_id);
                         let _lock = root.lock();
-                        for rc in v {
-                            let _ = rc.clone();
+                        for core_id in core_ids {
+                            core_affinity::set_for_current(core_id);
+                            for rc in &v {
+                                let _ = rc.clone();
+                            }
                         }
+                        // Drop v with lock still held.
+                        drop(v);
                     }).join().unwrap()
                 },
                 BatchSize::SmallInput,
@@ -67,11 +69,9 @@ fn criterion_benchmark(c: &mut Criterion) {
             b.iter_batched(
                 || {
                     std::thread::spawn(|| {
-                        let core_ids = core_affinity::get_core_ids().unwrap();
-                        let setup_core_id = core_ids[0];
-                        // Run test on a separate cpu. core_ids[1] might
-                        // be on the same core as 0 (hyperthreading), so skip to 2.
-                        let test_core_id = core_ids[2];
+                        let mut core_ids = core_affinity::get_core_ids().unwrap();
+                        // Exclude Current core from tests.
+                        let setup_core_id = core_ids.pop().unwrap();
                         core_affinity::set_for_current(setup_core_id);
                         let mut v = Vec::new();
                         for _ in 0..black_box(N) {
@@ -79,14 +79,16 @@ fn criterion_benchmark(c: &mut Criterion) {
                             // Force an atomic operation on this core.
                             let _ = v.last().unwrap().clone();
                         }
-                        (test_core_id, v)
+                        (core_ids, v)
                     }).join().unwrap()
                 },
-                |(test_core_id, v)| {
+                |(core_ids, v)| {
                     std::thread::spawn(move || {
-                        core_affinity::set_for_current(test_core_id);
-                        for rc in v {
-                            let _ = rc.clone();
+                        for core_id in core_ids {
+                            core_affinity::set_for_current(core_id);
+                            for rc in &v {
+                                let _ = rc.clone();
+                            }
                         }
                     }).join().unwrap()
                 },
