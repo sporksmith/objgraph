@@ -26,17 +26,21 @@ to be sent across threads.
 We should be able to similarly implement `RootedRefCell` to allow us to do `RefCell`-like
 borrow tracking without atomic operations, while retaining `Send` and `Sync`.
 
-## Status
-
-This is currently a sketch for discussion purposes.
+## Usage and testing
 
 There is a mock-up example of Shadow's intended usage of this crate in
 `examples/shadow.rs`, which can be run with `cargo run --example shadow`. It
 also passes [miri](https://github.com/rust-lang/miri) (`cargo miri run --example shadow`).
 
-This needs expert review and more testing to validate that this model is
-actually safe. e.g. we should be looking for counter-examples that we or miri
-can identify as unsound.
+There are also unit tests, which should also pass `miri`, with
+`-Zmiri-ignore-leaks`. See https://github.com/sporksmith/objgraph/issues/1
+
+## Status
+
+This is currently a sketch for discussion and analysis. It needs more review and testing
+to validate soundness, and so far the performance benefit vs just using `Arc` 
+appear to be marginal. e.g. see https://github.com/sporksmith/objgraph/issues/2#issuecomment-1126967984. (It may be worth also building `RootedRefCell` to compare
+it to `RefCell` and `Mutex`, but I'd expect the performance tradeoff to be similar)
 
 There is also a lot of room for ergonomic and performance improvements for this
 to work well as a general-purpose crate.
