@@ -27,7 +27,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        let mut group = c.benchmark_group("cross-core clone clone");
+        let mut group = c.benchmark_group("cross-core clone");
         const N: usize = 10000;
         group.bench_function("RootedRc", |b| {
             b.iter_batched(
