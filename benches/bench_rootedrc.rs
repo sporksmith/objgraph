@@ -13,7 +13,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut group = c.benchmark_group("clone");
         group.bench_function("RootedRc", |b| {
             b.iter_batched(
-                || RootedRc::new(root.tag(), ()),
+                || RootedRc::<(), _>::new(root.tag(), ()),
                 |x| x.clone(),
                 BatchSize::SmallInput,
             );
@@ -30,7 +30,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut group = c.benchmark_group("drop");
         group.bench_function("RootedRc", |b| {
             b.iter_batched(
-                || RootedRc::new(root.tag(), ()),
+                || RootedRc::<(), _>::new(root.tag(), ()),
                 |x| drop(x),
                 BatchSize::SmallInput,
             );
