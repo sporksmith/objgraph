@@ -7,12 +7,14 @@ edition = "2021"
 
 [dependencies]
 
+
 [[example]]
 name="shadow"
 path="examples/shadow.rs"
 
 [dev-dependencies]
 criterion = "0.3"
+core_affinity = "0.5.10"
 
 [[bench]]
 name = "bench_rootedrc"
