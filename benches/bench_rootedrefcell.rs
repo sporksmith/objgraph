@@ -1,12 +1,8 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex},
-};
+use std::{cell::RefCell, sync::Mutex};
 
 use atomic_refcell::AtomicRefCell;
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
-use objgraph::{Root, RootedRc, RootedRefCell};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use objgraph::{Root, RootedRefCell};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let root: &'static _ = Box::leak(Box::new(Root::new(())));
