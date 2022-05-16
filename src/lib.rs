@@ -177,6 +177,8 @@ impl<'a, T> DerefMut for GraphRootGuard<'a, T> {
 /// current thread.
 pub struct RootedRc<R, T> {
     tag: Tag,
+    // TODO: Safety currently relies on assumptions about implementation details
+    // of Rc. Probably need to reimplement Rc.
     val: ManuallyDrop<Rc<T>>,
     _phantom: PhantomData<R>,
 }
@@ -351,6 +353,8 @@ mod test_rooted_rc {
 
 pub struct RootedRefCell<R, T> {
     tag: Tag,
+    // TODO: Safety currently relies on assumptions about implementation details
+    // of RefCell. Probably need to reimplement RefCell.
     val: ManuallyDrop<RefCell<T>>,
     _phantom: PhantomData<R>,
 }
