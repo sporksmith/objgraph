@@ -199,6 +199,25 @@ impl<R, T> RootedRc<R, T> {
             _phantom: PhantomData,
         }
     }
+
+    /// Uses a reference to the lock to validate safety instead of accessing a
+    /// thread-local lock tracker, making it somewhat faster than `clone`.
+    pub fn fast_clone(&self, guard: &GraphRootGuard<R>) -> Self {
+        assert_eq!(guard.tag, self.tag);
+        // SAFETY: We've verified that the lock is held by inspection of the
+        // lock itself. We hold a reference to the guard, guaranteeing that the
+        // lock is held while `unchecked_clone` runs.
+        unsafe { self.unchecked_clone() }
+    }
+
+    // SAFETY: The lock for the root with this object's tag must be held.
+    unsafe fn unchecked_clone(&self) -> Self {
+        Self {
+            tag: self.tag.clone(),
+            val: self.val.clone(),
+            _phantom: PhantomData,
+        }
+    }
 }
 
 impl<R, T> Clone for RootedRc<R, T> {
@@ -207,13 +226,10 @@ impl<R, T> Clone for RootedRc<R, T> {
             let t = t.borrow();
             // Validate that the root is locked.
             assert!(t.has_tag(self.tag));
-            // Continue holding a reference to the tracker while calling member
-            // methods, to ensure the lock isn't dropped while they're running.
-            Self {
-                tag: self.tag.clone(),
-                val: self.val.clone(),
-                _phantom: PhantomData,
-            }
+            // SAFETY: We've validated that this thread holds the lock.
+            // We hold a reference to the tracker, preventing the lock from being
+            // released while the clone implementation runs.
+            unsafe { self.unchecked_clone() }
         })
     }
 }

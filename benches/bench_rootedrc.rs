@@ -9,12 +9,19 @@ fn criterion_benchmark(c: &mut Criterion) {
     let root = Root::new(());
 
     {
-        let _lock = root.lock();
+        let lock = root.lock();
         let mut group = c.benchmark_group("clone");
         group.bench_function("RootedRc", |b| {
             b.iter_batched(
                 || RootedRc::<(), _>::new(root.tag(), ()),
                 |x| x.clone(),
+                BatchSize::SmallInput,
+            );
+        });
+        group.bench_function("RootedRc fast_clone", |b| {
+            b.iter_batched(
+                || RootedRc::<(), _>::new(root.tag(), ()),
+                |x| x.fast_clone(&lock),
                 BatchSize::SmallInput,
             );
         });
