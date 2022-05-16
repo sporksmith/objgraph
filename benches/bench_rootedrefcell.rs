@@ -34,6 +34,16 @@ fn criterion_benchmark(c: &mut Criterion) {
                 BatchSize::SmallInput,
             );
         });
+        group.bench_function("parking_lot::Mutex", |b| {
+            b.iter_batched(
+                || parking_lot::Mutex::new(0),
+                |x| {
+                    let rv = *x.lock();
+                    (x, rv)
+                },
+                BatchSize::SmallInput,
+            );
+        });
         group.bench_function("AtomicRefCell", |b| {
             b.iter_batched(
                 || AtomicRefCell::new(0),

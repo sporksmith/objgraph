@@ -54,6 +54,7 @@ From fastest to slowest:
 | borrow_mut/RefCell       | 1.6174 ns 1.6543 ns 1.6840 ns |
 | **borrow_mut/RootedRefCell** | 5.9403 ns 5.9613 ns 5.9800 ns |
 | borrow_mut/AtomicRefCell | 10.912 ns 10.928 ns 10.942 ns |
+| borrow_mut/parking_lot::Mutex | 13.187 ns 13.209 ns 13.229 ns |
 | borrow_mut/Mutex         | 19.187 ns 19.203 ns 19.219 ns |
 
 Benchmark sources are in `benches` and can be run with `cargo bench`.
