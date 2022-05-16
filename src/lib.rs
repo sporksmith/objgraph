@@ -13,49 +13,20 @@ use std::{
 /// Every object root is assigned a Tag, which we enforce is globally unique.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Tag(u64);
-
-#[derive(Debug)]
-struct AtomicTag(AtomicU64);
-
-/// For simplicity we have a single SUPER_ROOT, which enforces uniqueness of
-/// `Tag`s.
-///
-/// It'd probably be a little nicer to let crate-users provide their own
-/// `SuperRoot`, but then we need a bit more tracking and checking to ensure
-/// we're not comparing tags from different `SuperRoot`s.
-///
-/// Conversely, since tags are 64 bits, multiple users of this crate shouldn't
-/// interfere with eachother. At worst maybe there could be contention for the
-/// underlying `Atomic`?
-struct SuperRoot {
-    next_tag: AtomicTag,
-}
-static SUPER_ROOT: SuperRoot = SuperRoot::new();
-
-impl SuperRoot {
-    pub const fn new() -> Self {
-        Self {
-            next_tag: AtomicTag(AtomicU64::new(0)),
-        }
-    }
-
-    fn next_tag(&self) -> Tag {
-        Tag(self.next_tag.0.fetch_add(1, Ordering::Relaxed))
+static NEXT_TAG: AtomicU64 = AtomicU64::new(0);
+impl Tag {
+    pub fn new() -> Self {
+        Self(NEXT_TAG.fetch_add(1, Ordering::Relaxed))
     }
 }
 
-/// Tracks which `Tag`s (and hence which `Root`s) are locked by the current thread.
-///
-/// Again it might be nicer to let crate users provide their own. In that case
-/// we could probably also simplify the implementation to just store an
-/// `Option<Tag>`, avoiding the overhead of the `HashSet` in cases where it's
-/// unneeded.
-///
-/// To do that we'd again need some additional tracking to ensure we're checking
-/// the right object. This is made a bit more complex because typically this
-/// should be kept in a thread-local, which we can't really store references for
-/// elsewhere.
+/// Tracks which `Root` is locked for the current thread.
 struct ThreadRootTracker {
+    // Tag of the Root that's currenty locked, if any.
+    //
+    // We *could* support multiple roots being locked at once, but using e.g.  a
+    // hash table here adds significant overhead. Instead we support multiple
+    // Root types, each with its own tracker.
     current_tag: Option<Tag>,
     // Force to *not* be Send nor Sync, since it tracks state of the *current
     // thread*.
@@ -65,7 +36,7 @@ struct ThreadRootTracker {
 }
 
 impl ThreadRootTracker {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             current_tag: None,
             _phantom: std::marker::PhantomData,
@@ -77,13 +48,22 @@ impl ThreadRootTracker {
     }
 
     fn add_tag(&mut self, tag: Tag) {
-        debug_assert!(self.current_tag.is_none());
+        debug_assert!(
+            self.current_tag.is_none(),
+            "Tried adding tag {:?} with tag {:?} already held",
+            tag,
+            self.current_tag
+        );
 
         self.current_tag = Some(tag)
     }
 
     fn clear_tag(&mut self, tag: Tag) {
-        debug_assert!(self.has_tag(tag));
+        debug_assert!(
+            self.has_tag(tag),
+            "Tried clearing tag {:?} which isn't held",
+            tag
+        );
 
         self.current_tag.take();
     }
@@ -91,6 +71,10 @@ impl ThreadRootTracker {
 
 /// Root of an "object graph". It holds a lock over the contents of the graph,
 /// and ensures tracks which tags are locked by the current thread.
+///
+/// We only support a thread having one Root of any given type T being locked at
+/// once. Crate users should use a private type T that they own to avoid
+/// conflicts.
 pub struct Root<T> {
     root: ManuallyDrop<Mutex<T>>,
     tag: Tag,
@@ -101,14 +85,17 @@ impl<T> Root<T> {
         /// Must be unique per thread. Must also be accessible by e.g.
         /// `RootedRc::Drop`, which is easiest if it's in a thread-local.
         ///
-        /// TODO: Add a way for crate-users to supply their own tracker.
+        /// Maybe parameterize by tracker type and location as well? A type
+        /// would probably be straightforward, though having the user provide an
+        /// object is trickier, since again we need to be able to get to the
+        /// tracker from `Drop` implementations.
         static THREAD_ROOT_TRACKER : RefCell<ThreadRootTracker> = RefCell::new(ThreadRootTracker::new());
     }
 
     pub fn new(root: T) -> Self {
         Self {
             root: ManuallyDrop::new(std::sync::Mutex::new(root)),
-            tag: SUPER_ROOT.next_tag(),
+            tag: Tag::new(),
         }
     }
 
@@ -185,6 +172,9 @@ impl<'a, T> DerefMut for GraphRootGuard<'a, T> {
 ///
 /// Unlike `Rc`, this type `Send` and `Sync` if `T` is. It leverages lock-tracking
 /// to ensure `Rc` operations are protected.
+///
+/// Panics if dropped without the corresponding Root lock being held by the
+/// current thread.
 pub struct RootedRc<R, T> {
     tag: Tag,
     val: ManuallyDrop<Rc<T>>,
@@ -192,6 +182,7 @@ pub struct RootedRc<R, T> {
 }
 
 impl<R, T> RootedRc<R, T> {
+    /// Creates a new object guarded by the Root with the given `tag`.
     pub fn new(tag: Tag, val: T) -> Self {
         Self {
             tag,
@@ -202,8 +193,14 @@ impl<R, T> RootedRc<R, T> {
 
     /// Uses a reference to the lock to validate safety instead of accessing a
     /// thread-local lock tracker, making it somewhat faster than `clone`.
+    ///
+    /// Panics if `guard` doesn't match this objects tag.
     pub fn fast_clone(&self, guard: &GraphRootGuard<R>) -> Self {
-        assert_eq!(guard.tag, self.tag);
+        assert_eq!(
+            guard.tag, self.tag,
+            "Tried using a lock for {:?} instead of {:?}",
+            guard.tag, self.tag
+        );
         // SAFETY: We've verified that the lock is held by inspection of the
         // lock itself. We hold a reference to the guard, guaranteeing that the
         // lock is held while `unchecked_clone` runs.
@@ -225,7 +222,11 @@ impl<R, T> Clone for RootedRc<R, T> {
         Root::<R>::THREAD_ROOT_TRACKER.with(|t| {
             let t = t.borrow();
             // Validate that the root is locked.
-            assert!(t.has_tag(self.tag));
+            assert!(
+                t.has_tag(self.tag),
+                "Clone called without {:?} locked",
+                self.tag
+            );
             // SAFETY: We've validated that this thread holds the lock.
             // We hold a reference to the tracker, preventing the lock from being
             // released while the clone implementation runs.
@@ -239,7 +240,7 @@ impl<R, T> Drop for RootedRc<R, T> {
         Root::<R>::THREAD_ROOT_TRACKER.with(|t| {
             let t = t.borrow();
             // Validate that the root is locked.
-            assert!(t.has_tag(self.tag));
+            assert!(t.has_tag(self.tag), "Dropped without {:?} locked", self.tag);
             // We have to manually drop `val` while holding the reference
             // to the tracker to ensure the lock can't be released.
             // SAFETY: Nothing can access val in between this and `self` itself
@@ -355,6 +356,7 @@ pub struct RootedRefCell<R, T> {
 }
 
 impl<R, T> RootedRefCell<R, T> {
+    /// Create a RootedRefCell bound to the given tag.
     pub fn new(tag: Tag, val: T) -> Self {
         Self {
             tag,
@@ -363,12 +365,18 @@ impl<R, T> RootedRefCell<R, T> {
         }
     }
 
+    /// Borrow a reference. Panics if `root_guard` is for the wrong tag, or if
+    /// this object is alread mutably borrowed.
     pub fn borrow<'a>(
         &'a self,
         root_guard: &'a GraphRootGuard<'a, R>,
     ) -> RootedRefCellRef<'a, R, T> {
         // Prove that the lock is held for this tag.
-        assert_eq!(root_guard.tag, self.tag);
+        assert_eq!(
+            root_guard.tag, self.tag,
+            "Expected {:?} Got {:?}",
+            self.tag, root_guard.tag
+        );
         // Borrow from the guard to ensure the lock can't be dropped.
         RootedRefCellRef {
             _root_guard: root_guard,
@@ -376,12 +384,18 @@ impl<R, T> RootedRefCell<R, T> {
         }
     }
 
+    /// Borrow a mutable reference. Panics if `root_guard` is for the wrong tag,
+    /// or if this object is alread borrowed.
     pub fn borrow_mut<'a>(
         &'a self,
         root_guard: &'a GraphRootGuard<'a, R>,
     ) -> RootedRefCellRefMut<'a, R, T> {
         // Prove that the lock is held for this tag.
-        assert_eq!(root_guard.tag, self.tag);
+        assert_eq!(
+            root_guard.tag, self.tag,
+            "Expected {:?} Got {:?}",
+            self.tag, root_guard.tag
+        );
         // Borrow from the guard to ensure the lock can't be dropped.
         RootedRefCellRefMut {
             _root_guard: root_guard,
