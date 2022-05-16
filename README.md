@@ -34,12 +34,13 @@ object's lock.
 
 From fastest to slowest:
 
-```
-clone/Rc                   time:   [1.2097 ns 1.2526 ns 1.2923 ns]
-clone/RootedRc fast_clone  time:   [5.5402 ns 5.5796 ns 5.6151 ns]
-clone/RootedRc             time:   [8.6915 ns 8.7197 ns 8.7470 ns]
-clone/Arc                  time:   [10.613 ns 10.648 ns 10.689 ns]
-```
+| benchmark | time |
+| -------- | ------ |
+| clone/Rc                  | 1.2097 ns 1.2526 ns 1.2923 ns |
+| **clone/RootedRc fast_clone** | 5.5402 ns 5.5796 ns 5.6151 ns |
+| **clone/RootedRc**             | 8.6915 ns 8.7197 ns 8.7470 ns |
+| clone/Arc                  | 10.613 ns 10.648 ns 10.689 ns |
+
 
 Performance for `RootedRefCell` is analagous to `RootedRc::fast_clone`,
 since it always requires a reference to the lock to borrow (thus ensuring
@@ -47,12 +48,13 @@ that the lock is held for the entire time that the borrowed reference is).
 
 From fastest to slowest:
 
-```
-borrow_mut/RefCell        time:   [1.6174 ns 1.6543 ns 1.6840 ns]
-borrow_mut/RootedRefCell  time:   [5.9403 ns 5.9613 ns 5.9800 ns]
-borrow_mut/AtomicRefCell  time:   [10.912 ns 10.928 ns 10.942 ns]
-borrow_mut/Mutex          time:   [19.187 ns 19.203 ns 19.219 ns]
-```
+
+| benchmark | time |
+| -------- | ------ |
+| borrow_mut/RefCell       | 1.6174 ns 1.6543 ns 1.6840 ns |
+| **borrow_mut/RootedRefCell** | 5.9403 ns 5.9613 ns 5.9800 ns |
+| borrow_mut/AtomicRefCell | 10.912 ns 10.928 ns 10.942 ns |
+| borrow_mut/Mutex         | 19.187 ns 19.203 ns 19.219 ns |
 
 Benchmark sources are in `benches` and can be run with `cargo bench`.
 
