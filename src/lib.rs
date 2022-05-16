@@ -256,8 +256,8 @@ impl<R, T> Drop for RootedRc<R, T> {
 // `Sync`. However, RootedRc ensures that `Rc`'s reference count can only be
 // accessed when the root is locked by the current thread, effectively
 // synchronizing the reference count.
-unsafe impl<R, T: Send> Send for RootedRc<R, T> {}
-unsafe impl<R, T: Sync> Sync for RootedRc<R, T> {}
+unsafe impl<R, T: Sync + Send> Send for RootedRc<R, T> {}
+unsafe impl<R, T: Sync + Send> Sync for RootedRc<R, T> {}
 
 impl<R, T> Deref for RootedRc<R, T> {
     type Target = T;
@@ -409,8 +409,7 @@ impl<R, T> RootedRefCell<R, T> {
 }
 
 unsafe impl<R, T: Send> Send for RootedRefCell<R, T> {}
-// Does *not* require  T to be Sync, since we synchronize on the root lock.
-unsafe impl<R, T> Sync for RootedRefCell<R, T> {}
+unsafe impl<R, T: Send> Sync for RootedRefCell<R, T> {}
 
 impl<R, T> Drop for RootedRefCell<R, T> {
     fn drop(&mut self) {
