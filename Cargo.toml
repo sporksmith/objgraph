@@ -13,9 +13,14 @@ name="shadow"
 path="examples/shadow.rs"
 
 [dev-dependencies]
+atomic_refcell = "0.1"
 criterion = "0.3"
 core_affinity = "0.5.10"
 
 [[bench]]
 name = "bench_rootedrc"
+harness = false
+
+[[bench]]
+name = "bench_rootedrefcell"
 harness = false
