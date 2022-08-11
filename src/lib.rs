@@ -210,7 +210,7 @@ impl<R, T> RootedRc<R, T> {
     }
 
     // SAFETY: The lock for the root with this object's tag must be held.
-    unsafe fn unchecked_clone(&self) -> Self {
+    pub unsafe fn unchecked_clone(&self) -> Self {
         Self {
             tag: self.tag.clone(),
             val: self.val.clone(),

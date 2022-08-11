@@ -25,6 +25,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                 BatchSize::SmallInput,
             );
         });
+        group.bench_function("RootedRc unchecked_clone", |b| {
+            b.iter_batched(
+                || RootedRc::<(), _>::new(root.tag(), ()),
+                |x| unsafe { x.unchecked_clone() },
+                BatchSize::SmallInput,
+            );
+        });
         group.bench_function("Arc", |b| {
             b.iter_batched(|| Arc::new(()), |x| x.clone(), BatchSize::SmallInput);
         });
