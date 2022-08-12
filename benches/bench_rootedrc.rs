@@ -9,34 +9,38 @@ fn criterion_benchmark(c: &mut Criterion) {
     let root = Root::new(());
 
     {
+        // Careful to use iter_batched_ref here to avoid dropping the input inside
+        // the benchmark function, and for the benchmark function to return the cloned
+        // value so that it'll be dropped outside of the benchmark.
+
         let lock = root.lock();
         let mut group = c.benchmark_group("clone");
         group.bench_function("RootedRc", |b| {
-            b.iter_batched(
+            b.iter_batched_ref(
                 || RootedRc::<(), _>::new(root.tag(), ()),
                 |x| x.clone(),
                 BatchSize::SmallInput,
             );
         });
         group.bench_function("RootedRc fast_clone", |b| {
-            b.iter_batched(
+            b.iter_batched_ref(
                 || RootedRc::<(), _>::new(root.tag(), ()),
                 |x| x.fast_clone(&lock),
                 BatchSize::SmallInput,
             );
         });
         group.bench_function("RootedRc unchecked_clone", |b| {
-            b.iter_batched(
+            b.iter_batched_ref(
                 || RootedRc::<(), _>::new(root.tag(), ()),
                 |x| unsafe { x.unchecked_clone() },
                 BatchSize::SmallInput,
             );
         });
         group.bench_function("Arc", |b| {
-            b.iter_batched(|| Arc::new(()), |x| x.clone(), BatchSize::SmallInput);
+            b.iter_batched_ref(|| Arc::new(()), |x| x.clone(), BatchSize::SmallInput);
         });
         group.bench_function("Rc", |b| {
-            b.iter_batched(|| Rc::new(()), |x| x.clone(), BatchSize::SmallInput);
+            b.iter_batched_ref(|| Rc::new(()), |x| x.clone(), BatchSize::SmallInput);
         });
     }
 
