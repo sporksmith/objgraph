@@ -5,14 +5,14 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use objgraph::{Root, RootedRefCell};
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let root: &'static _ = Box::leak(Box::new(Root::new(())));
+    let root: &'static _ = Box::leak(Box::new(Root::new()));
     let lock: &'static _ = Box::leak(Box::new(root.lock()));
 
     {
         let mut group = c.benchmark_group("borrow_mut");
         group.bench_function("RootedRefCell", |b| {
             b.iter_batched(
-                || RootedRefCell::<(), _>::new(root.tag(), 0),
+                || RootedRefCell::new(root.tag(), 0),
                 |x| {
                     let rv = *x.borrow_mut(&lock);
                     (x, rv)

@@ -1,46 +1,29 @@
-#![feature(thread_local)]
-
 use std::{rc::Rc, sync::Arc};
 
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
 use objgraph::{Root, RootedRc};
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let root = Root::new(());
+    let root = Root::new();
 
     {
-        // Careful to use iter_batched_ref here to avoid dropping the input inside
-        // the benchmark function, and for the benchmark function to return the cloned
-        // value so that it'll be dropped outside of the benchmark.
-
         let lock = root.lock();
-        let mut group = c.benchmark_group("clone");
+        let mut group = c.benchmark_group("clone and drop");
         group.bench_function("RootedRc", |b| {
-            b.iter_batched_ref(
-                || RootedRc::<(), _>::new(root.tag(), ()),
-                |x| x.clone(),
-                BatchSize::SmallInput,
-            );
-        });
-        group.bench_function("RootedRc fast_clone", |b| {
-            b.iter_batched_ref(
-                || RootedRc::<(), _>::new(root.tag(), ()),
-                |x| x.fast_clone(&lock),
-                BatchSize::SmallInput,
-            );
-        });
-        group.bench_function("RootedRc unchecked_clone", |b| {
-            b.iter_batched_ref(
-                || RootedRc::<(), _>::new(root.tag(), ()),
-                |x| unsafe { x.unchecked_clone() },
+            b.iter_batched(
+                || RootedRc::new(root.tag(), ()),
+                |x| {
+                    x.clone(&lock).safely_drop(&lock);
+                    x.safely_drop(&lock);
+                },
                 BatchSize::SmallInput,
             );
         });
         group.bench_function("Arc", |b| {
-            b.iter_batched_ref(|| Arc::new(()), |x| x.clone(), BatchSize::SmallInput);
+            b.iter_batched(|| Arc::new(()), |x| { let _ = x.clone(); }, BatchSize::SmallInput);
         });
         group.bench_function("Rc", |b| {
-            b.iter_batched_ref(|| Rc::new(()), |x| x.clone(), BatchSize::SmallInput);
+            b.iter_batched(|| Rc::new(()), |x| { let _ = x.clone(); }, BatchSize::SmallInput);
         });
     }
 
@@ -51,19 +34,20 @@ fn criterion_benchmark(c: &mut Criterion) {
             b.iter_batched(
                 || {
                     std::thread::spawn(|| {
-                        let root = Root::new(());
                         let mut core_ids = core_affinity::get_core_ids().unwrap();
                         // Exclude Current core from tests.
                         let setup_core_id = core_ids.pop().unwrap();
                         core_affinity::set_for_current(setup_core_id);
+                        let root = Root::new();
                         let mut v = Vec::new();
-                        let _lock = root.lock();
+                        let lock = root.lock();
                         for _ in 0..black_box(N) {
-                            v.push(RootedRc::<(), _>::new(root.tag(), ()));
-                            // Force an atomic operation on this core.
-                            let _ = v.last().unwrap().clone();
+                            v.push(RootedRc::new(root.tag(), ()));
+                            // No atomic operation here, but for consistency with Arc benchmark.
+                            let t = v.last().unwrap().clone(&lock);
+                            t.safely_drop(&lock);
                         }
-                        drop(_lock);
+                        drop(lock);
                         (root, core_ids, v)
                     })
                     .join()
@@ -71,15 +55,18 @@ fn criterion_benchmark(c: &mut Criterion) {
                 },
                 |(root, core_ids, v)| {
                     std::thread::spawn(move || {
-                        let _lock = root.lock();
+                        let lock = root.lock();
                         for core_id in core_ids {
                             core_affinity::set_for_current(core_id);
                             for rc in &v {
-                                let _ = rc.clone();
+                                let v = rc.clone(&lock);
+                                v.safely_drop(&lock);
                             }
                         }
-                        // Drop v with lock still held.
-                        drop(v);
+                        // Safely drop contents of v
+                        for rc in v {
+                            rc.safely_drop(&lock);
+                        }
                     })
                     .join()
                     .unwrap()
@@ -123,6 +110,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     }
 
+    /*
     {
         let _lock = root.lock();
         let mut group = c.benchmark_group("drop");
@@ -140,6 +128,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             b.iter_batched(|| Rc::new(()), |x| drop(x), BatchSize::SmallInput);
         });
     }
+    */
 }
 
 criterion_group!(benches, criterion_benchmark);

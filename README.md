@@ -28,23 +28,18 @@ borrow tracking without atomic operations, while retaining `Send` and `Sync`.
 
 ## Performance And Send/Sync
 
-`RootedRc::clone` is only marginally faster than `Arc::clone`;
-`RootedRc::fast_clone` is faster but requires a reference to the `Root`
-object's lock.
-
-From fastest to slowest:
+`RootedRc` is roughly as fast as `Rc`, and about half the cost of `Arc`. (It's currently measuring
+consistently faster than `Rc`, which seems like a measurement artifact, but I haven't been able to identify it.) From fastest to slowest:
 
 | benchmark | time | Send | Sync |
 | -------- | ------ | -- | -- |
-| clone/Rc                  | 1.2097 ns 1.2526 ns 1.2923 ns | !Send | !Sync |
-| **clone/RootedRc fast_clone** | 5.5402 ns 5.5796 ns 5.6151 ns | Send where T: Sync + Send | Sync where T: Sync + Send |
-| **clone/RootedRc**             | 8.6915 ns 8.7197 ns 8.7470 ns | Send where T: Sync + Send | Sync where T: Sync + Send |
-| clone/Arc                  | 10.613 ns 10.648 ns 10.689 ns | Send where T: Sync + Send |  Sync where T: Sync + Send |
+| **clone and drop/RootedRc** | 12.599 ns 12.669 ns 12.739  | Send where T: Sync + Send | Sync where T: Sync + Send |
+| clone and drop/Rc                  | 14.552 ns 14.732 ns 14.911 ns | !Send | !Sync |
+| clone and drop/Arc                  | 29.717 ns 29.853 ns 30.000 ns | Send where T: Sync + Send |  Sync where T: Sync + Send |
 
 
-Performance for `RootedRefCell` is analagous to `RootedRc::fast_clone`,
-since it always requires a reference to the lock to borrow (thus ensuring
-that the lock is held for the entire time that the borrowed reference is).
+`RootedRefCell` is a bit slower than `RefCell`, but again about half the cost of the fastest synchronized
+equivalent, `AtomicRefCell`.
 
 From fastest to slowest:
 
@@ -52,9 +47,9 @@ From fastest to slowest:
 | -------- | ------ | -- | -- |
 | borrow_mut/RefCell       | 1.6174 ns 1.6543 ns 1.6840 ns | Send where T: Send | !Sync |
 | **borrow_mut/RootedRefCell** | 5.9403 ns 5.9613 ns 5.9800 ns | Send where T: Send | Sync where T: Send |
-| borrow_mut/AtomicRefCell | 10.912 ns 10.928 ns 10.942 ns | Send where T: Send | Sync where T: Send |
-| borrow_mut/parking_lot::Mutex | 13.187 ns 13.209 ns 13.229 ns | Send where T: Send | Sync where T: Send |
-| borrow_mut/Mutex         | 19.187 ns 19.203 ns 19.219 ns | Send where T: Send | Sync where T: Send |
+| borrow_mut/AtomicRefCell | 10.866 ns 10.921 ns 10.978 ns | Send where T: Send | Sync where T: Send |
+| borrow_mut/parking_lot::Mutex | 12.692 ns 12.755 ns 12.819 ns | Send where T: Send | Sync where T: Send |
+| borrow_mut/Mutex         | 18.990 ns 19.039 ns 19.095 ns | Send where T: Send | Sync where T: Send |
 
 Benchmark sources are in `benches` and can be run with `cargo bench`.
 

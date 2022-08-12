@@ -1,15 +1,33 @@
-use objgraph::{Root, RootedRc};
+use objgraph::{Root, RootedRc, GraphRootGuard};
 use std::{
     collections::HashMap,
-    thread::{self, Thread},
+    thread,
 };
 
 struct Host {
     processes: HashMap<u32, Process>,
+    root: Root,
+}
+
+impl Drop for Host {
+    fn drop(&mut self) {
+        let guard = self.root.lock();
+        for (_, p) in self.processes.drain() {
+            p.safely_drop(&guard);
+        }
+    }
 }
 
 struct Process {
-    descriptors: HashMap<u32, RootedRc<Host, Descriptor>>,
+    descriptors: HashMap<u32, RootedRc<Descriptor>>,
+}
+
+impl Process {
+    pub fn safely_drop(self, guard: &GraphRootGuard) {
+        for (_, d) in self.descriptors {
+            d.safely_drop(&guard)
+        }
+    }
 }
 
 struct Descriptor {
@@ -17,62 +35,65 @@ struct Descriptor {
 }
 
 pub fn main() {
-    let mut hosts = HashMap::<u32, Root<Host>>::new();
+    let mut hosts = HashMap::<u32, Host>::new();
 
     // host1 has 2 processes, which have a shared Descriptor.
     // (Maybe one was forked from the other)
-    let host1 = Root::new(Host {
+    let mut host1 = Host {
         processes: HashMap::new(),
-    });
+        root: Root::new(),
+    };
     {
-        let mut host1_lock = host1.lock();
-        let descriptor = RootedRc::new(host1.tag(), Descriptor { open: true });
+        let host1_lock = host1.root.lock();
+        let descriptor = RootedRc::new(host1.root.tag(), Descriptor { open: true });
 
         // Process 0 has a reference to the descriptor.
-        host1_lock.processes.insert(
+        host1.processes.insert(
             0,
             Process {
                 descriptors: HashMap::new(),
             },
         );
-        host1_lock
+        host1
             .processes
             .get_mut(&0)
             .unwrap()
             .descriptors
-            .insert(0, descriptor.clone());
+            .insert(0, descriptor.clone(&host1_lock));
 
         // So does Process 1.
-        host1_lock.processes.insert(
+        host1.processes.insert(
             1,
             Process {
                 descriptors: HashMap::new(),
             },
         );
-        host1_lock
+        host1
             .processes
             .get_mut(&1)
             .unwrap()
             .descriptors
-            .insert(0, descriptor.clone());
+            .insert(0, descriptor.clone(&host1_lock));
+
+        descriptor.safely_drop(&host1_lock);
     }
     hosts.insert(0, host1);
 
     // Process hosts in a worker thread
     let worker = thread::spawn(move || {
-        for (host_id, host) in &hosts {
-            let mut lock = host.lock();
+        for (host_id, host) in &mut hosts {
+            let lock = host.root.lock();
             // Dup a file descriptor. We clone RootedRc without any additional
             // atomic operations; it's protected by the host lock.
-            let descriptor = lock.processes[&0].descriptors[&0].clone();
-            lock.processes
+            let descriptor = host.processes[&0].descriptors[&0].clone(&lock);
+            host.processes
                 .get_mut(&0)
                 .unwrap()
                 .descriptors
                 .insert(2, descriptor);
 
             // Iterate
-            for (pid, process) in &lock.processes {
+            for (pid, process) in &host.processes {
                 for (fid, descriptor) in &process.descriptors {
                     println!(
                         "host_id:{} pid:{} fid:{} open:{}",
@@ -85,19 +106,6 @@ pub fn main() {
     });
 
     // Wait for worker to finish and get hosts back.
-    let hosts = worker.join().unwrap();
+    let _hosts = worker.join().unwrap();
     println!("worker done as expected");
-
-    // Uncomment to see a panic.
-    /*
-    // While a RootedRc can "escape", we'll get a panic if the reference count
-    // is manipulated without the corresponding host lock being held.
-    let escaped_descriptor = {
-        let lock = hosts[&0].lock();
-        lock.processes[&0].descriptors[&0].clone()
-    };
-
-    println!("We now own an escaped descriptor. We will next panic because of dropping it without the lock held.");
-    drop(escaped_descriptor);
-    */
 }
