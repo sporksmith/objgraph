@@ -2,18 +2,52 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicU32, Ordering},
     Mutex, MutexGuard,
 };
 
-/// Every object root is assigned a Tag, which we enforce is globally unique.
-/// XXX: todo: incorporate pid?
+use once_cell::sync::OnceCell;
+
+/// Every object root is assigned a Tag, which we ensure is globally unique.
+/// Each Tag value uniquely identifies a Root.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Tag(u64);
-static NEXT_TAG: AtomicU64 = AtomicU64::new(0);
+pub struct Tag {
+    prefix: TagPrefixType,
+    suffix: TagSuffixType,
+}
+
+/// Larger sizes here reduce the chance of collision, which could lead to
+/// silently missing bugs in some cases. Note though that there would both
+/// have to be a collision, and the code would need to incorrectly try to
+/// access data using the wrong root lock.
+///
+/// Increasing the size introduces some runtime overhead for storing, copying,
+/// and comparing tag values.
+type TagPrefixType = u32;
+
+/// Larger sizes here support a greater number of tags within a given prefix.
+///
+/// Increasing the size introduces some runtime overhead for storing, copying,
+/// and comparing tag values.
+type TagSuffixType = u32;
+type TagSuffixAtomicType = AtomicU32;
+
 impl Tag {
     pub fn new() -> Self {
-        Self(NEXT_TAG.fetch_add(1, Ordering::Relaxed))
+        // Every instance of this module uses a random prefix for tags.  This is to
+        // handle both the case where this module is used from multiple processes that
+        // share memory, and to handle the case where multiple instances of this module
+        // end up within a single process.
+        static TAG_PREFIX: OnceCell<TagPrefixType> = OnceCell::new();
+        let prefix = *TAG_PREFIX.get_or_init(|| rand::prelude::random());
+
+        static NEXT_TAG_SUFFIX: TagSuffixAtomicType = TagSuffixAtomicType::new(0);
+        let suffix: TagSuffixType = NEXT_TAG_SUFFIX.fetch_add(1, Ordering::Relaxed);
+
+        // Detect overflow
+        assert!(suffix != TagSuffixType::MAX);
+
+        Self { prefix, suffix }
     }
 }
 
