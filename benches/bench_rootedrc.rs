@@ -1,7 +1,23 @@
 use std::{rc::Rc, sync::Arc};
 
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
-use objgraph::{rc::RootedRc, Root};
+use objgraph::{rc::RootedRc, GraphRootGuard, Root};
+
+#[inline(never)]
+fn rootedrc_clone_and_drop(lock: &GraphRootGuard, x: RootedRc<()>) {
+    x.clone(&lock).safely_drop(&lock);
+    x.safely_drop(&lock);
+}
+
+#[inline(never)]
+fn arc_clone_and_drop(x: Arc<()>) {
+    let _ = x.clone();
+}
+
+#[inline(never)]
+fn rc_clone_and_drop(x: Rc<i32>) -> i32 {
+    *x.clone()
+}
 
 fn criterion_benchmark(c: &mut Criterion) {
     let root = Root::new();
@@ -12,28 +28,21 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("RootedRc", |b| {
             b.iter_batched(
                 || RootedRc::new(root.tag(), ()),
-                |x| {
-                    x.clone(&lock).safely_drop(&lock);
-                    x.safely_drop(&lock);
-                },
+                |x| rootedrc_clone_and_drop(&lock, x),
                 BatchSize::SmallInput,
             );
         });
         group.bench_function("Arc", |b| {
             b.iter_batched(
                 || Arc::new(()),
-                |x| {
-                    let _ = x.clone();
-                },
+                |x| arc_clone_and_drop(x),
                 BatchSize::SmallInput,
             );
         });
         group.bench_function("Rc", |b| {
             b.iter_batched(
-                || Rc::new(()),
-                |x| {
-                    let _ = x.clone();
-                },
+                || Rc::new(1),
+                |x| rc_clone_and_drop(x),
                 BatchSize::SmallInput,
             );
         });

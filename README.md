@@ -28,14 +28,15 @@ borrow tracking without atomic operations, while retaining `Send` and `Sync`.
 
 ## Performance And Send/Sync
 
-`RootedRc` is roughly as fast as `Rc`, and about half the cost of `Arc`. (It's currently measuring
-consistently faster than `Rc`, which seems like a measurement artifact, but I haven't been able to identify it.) From fastest to slowest:
+`RootedRc` is roughly one fifth the cost of `Arc`. It's also roughly one third the cost of `Rc`,
+which to be honest I don't understand, but may have something to do with `RootedRc` currently
+providing fewer features (e.g. no support for weak references yet). From fastest to slowest:
 
 | benchmark | time | Send | Sync |
 | -------- | ------ | -- | -- |
-| **clone and drop/RootedRc** | 12.599 ns 12.669 ns 12.739  | Send where T: Sync + Send | Sync where T: Sync + Send |
-| clone and drop/Rc                  | 14.552 ns 14.732 ns 14.911 ns | !Send | !Sync |
-| clone and drop/Arc                  | 29.717 ns 29.853 ns 30.000 ns | Send where T: Sync + Send |  Sync where T: Sync + Send |
+| **clone and drop/RootedRc** | 5.5606 ns 5.5923 ns 5.6238 ns  | Send where T: Sync + Send | Sync where T: Sync + Send |
+| clone and drop/Rc                  | 14.811 ns 14.925 ns 15.068 ns | !Send | !Sync |
+| clone and drop/Arc                  | 31.831 ns 31.974 ns 32.143 ns | Send where T: Sync + Send |  Sync where T: Sync + Send |
 
 
 `RootedRefCell` is a bit slower than `RefCell`, but again about half the cost of the fastest synchronized
