@@ -1,4 +1,4 @@
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::{Cell, UnsafeCell};
 use std::{
     ops::{Deref, DerefMut},
     rc::Rc,
@@ -227,9 +227,9 @@ mod test_rooted_rc {
 
 pub struct RootedRefCell<T> {
     tag: Tag,
-    // TODO: Safety currently relies on assumptions about implementation details
-    // of RefCell. Probably need to reimplement RefCell.
-    val: RefCell<T>,
+    val: UnsafeCell<T>,
+    reader_count: Cell<u32>,
+    writer: Cell<bool>,
 }
 
 impl<T> RootedRefCell<T> {
@@ -237,7 +237,9 @@ impl<T> RootedRefCell<T> {
     pub fn new(tag: Tag, val: T) -> Self {
         Self {
             tag,
-            val: RefCell::new(val),
+            val: UnsafeCell::new(val),
+            reader_count: Cell::new(0),
+            writer: Cell::new(false),
         }
     }
 
@@ -258,10 +260,13 @@ impl<T> RootedRefCell<T> {
             "Expected {:?} Got {:?}",
             self.tag, root_guard.guard.tag
         );
+
+        assert!(!self.writer.get());
+
+        self.reader_count.set(self.reader_count.get() + 1);
+
         // Borrow from the guard to ensure the lock can't be dropped.
-        RootedRefCellRef {
-            guard: self.val.borrow(),
-        }
+        RootedRefCellRef { guard: &self }
     }
 
     /// Borrow a mutable reference. Panics if `root_guard` is for the wrong tag,
@@ -277,9 +282,13 @@ impl<T> RootedRefCell<T> {
             "Expected {:?} Got {:?}",
             self.tag, root_guard.guard.tag
         );
-        RootedRefCellRefMut {
-            guard: self.val.borrow_mut(),
-        }
+
+        assert!(!self.writer.get());
+        assert!(self.reader_count.get() == 0);
+
+        self.writer.set(true);
+
+        RootedRefCellRefMut { guard: &self }
     }
 }
 
@@ -287,34 +296,49 @@ unsafe impl<T: Send> Send for RootedRefCell<T> {}
 unsafe impl<T: Send> Sync for RootedRefCell<T> {}
 
 pub struct RootedRefCellRef<'a, T> {
-    guard: Ref<'a, T>,
+    guard: &'a RootedRefCell<T>,
 }
 
 impl<'a, T> Deref for RootedRefCellRef<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.guard.deref()
+        unsafe { &*self.guard.val.get() }
+    }
+}
+
+impl<'a, T> Drop for RootedRefCellRef<'a, T> {
+    fn drop(&mut self) {
+        self.guard
+            .reader_count
+            .set(self.guard.reader_count.get() - 1);
     }
 }
 
 pub struct RootedRefCellRefMut<'a, T> {
-    guard: RefMut<'a, T>,
+    guard: &'a RootedRefCell<T>,
 }
 
 impl<'a, T> Deref for RootedRefCellRefMut<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.guard.deref()
+        unsafe { &*self.guard.val.get() }
     }
 }
 
 impl<'a, T> DerefMut for RootedRefCellRefMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.guard.deref_mut()
+        unsafe { &mut *self.guard.val.get() }
     }
 }
+
+impl<'a, T> Drop for RootedRefCellRefMut<'a, T> {
+    fn drop(&mut self) {
+        self.guard.writer.set(false);
+    }
+}
+
 
 #[cfg(test)]
 mod test_rooted_refcell {

@@ -1,8 +1,5 @@
-use objgraph::{Root, RootedRc, GraphRootGuard};
-use std::{
-    collections::HashMap,
-    thread,
-};
+use objgraph::{GraphRootGuard, Root, RootedRc};
+use std::{collections::HashMap, thread};
 
 struct Host {
     processes: HashMap<u32, Process>,
