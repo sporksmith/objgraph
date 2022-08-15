@@ -104,14 +104,13 @@ impl<T> Drop for RootedRc<T> {
             // never reach zero.
             //
             // If we're not already panicking, it's useful to panic here to make
-            // the leak more visible (though maybe we should only do so in debug
-            // builds?).
+            // the leak more visible.
             //
             // If we are already panicking though, that may already explain how
             // a call to `safely_drop` got skipped, and panicking again would
             // just obscure the original panic.
+            #[cfg(debug_assertions)]
             if !std::thread::panicking() {
-                // If we're not already panicking, do so now.
                 panic!("Dropped without calling `safely_drop`");
             }
         }
