@@ -20,10 +20,22 @@ fn criterion_benchmark(c: &mut Criterion) {
             );
         });
         group.bench_function("Arc", |b| {
-            b.iter_batched(|| Arc::new(()), |x| { let _ = x.clone(); }, BatchSize::SmallInput);
+            b.iter_batched(
+                || Arc::new(()),
+                |x| {
+                    let _ = x.clone();
+                },
+                BatchSize::SmallInput,
+            );
         });
         group.bench_function("Rc", |b| {
-            b.iter_batched(|| Rc::new(()), |x| { let _ = x.clone(); }, BatchSize::SmallInput);
+            b.iter_batched(
+                || Rc::new(()),
+                |x| {
+                    let _ = x.clone();
+                },
+                BatchSize::SmallInput,
+            );
         });
     }
 

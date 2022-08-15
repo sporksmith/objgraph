@@ -38,7 +38,7 @@ impl Root {
     pub fn new() -> Self {
         let tag = Tag::new();
         Self {
-            root: std::sync::Mutex::new(InnerRoot { tag } ),
+            root: std::sync::Mutex::new(InnerRoot { tag }),
             tag,
         }
     }
@@ -91,7 +91,7 @@ impl<T> RootedRc<T> {
     }
 
     /// Like Clone::clone, but requires that the corresponding Root is locked.
-    /// 
+    ///
     /// Intentionally named clone to shadow Self::deref()::clone().
     ///
     /// Panics if `guard` doesn't match this objects tag.
@@ -338,7 +338,6 @@ impl<'a, T> Drop for RootedRefCellRefMut<'a, T> {
         self.guard.writer.set(false);
     }
 }
-
 
 #[cfg(test)]
 mod test_rooted_refcell {
