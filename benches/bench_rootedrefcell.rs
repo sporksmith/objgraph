@@ -2,7 +2,7 @@ use std::{cell::RefCell, sync::Mutex};
 
 use atomic_refcell::AtomicRefCell;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use objgraph::{GraphRootGuard, Root, RootedRefCell};
+use objgraph::{refcell::RootedRefCell, GraphRootGuard, Root};
 
 #[inline(never)]
 fn rootedrefcell_borrow_mut(lock: &GraphRootGuard, x: &RootedRefCell<i32>) {

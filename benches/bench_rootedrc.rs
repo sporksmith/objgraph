@@ -1,7 +1,7 @@
 use std::{rc::Rc, sync::Arc};
 
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
-use objgraph::{Root, RootedRc};
+use objgraph::{rc::RootedRc, Root};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let root = Root::new();

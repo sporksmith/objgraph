@@ -1,4 +1,4 @@
-use objgraph::{GraphRootGuard, Root, RootedRc};
+use objgraph::{rc::RootedRc, GraphRootGuard, Root};
 use std::{collections::HashMap, thread};
 
 struct Host {
