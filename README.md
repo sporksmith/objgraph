@@ -45,11 +45,11 @@ From fastest to slowest:
 
 | benchmark | time | Send | Sync |
 | -------- | ------ | -- | -- |
-| borrow_mut/RefCell       | 1.6174 ns 1.6543 ns 1.6840 ns | Send where T: Send | !Sync |
-| **borrow_mut/RootedRefCell** | 5.9403 ns 5.9613 ns 5.9800 ns | Send where T: Send | Sync where T: Send |
-| borrow_mut/AtomicRefCell | 10.866 ns 10.921 ns 10.978 ns | Send where T: Send | Sync where T: Send |
-| borrow_mut/parking_lot::Mutex | 12.692 ns 12.755 ns 12.819 ns | Send where T: Send | Sync where T: Send |
-| borrow_mut/Mutex         | 18.990 ns 19.039 ns 19.095 ns | Send where T: Send | Sync where T: Send |
+| borrow_mut/RefCell       | 988.27 ps 1.0092 ns 1.0258 ns | Send where T: Send | !Sync |
+| **borrow_mut/RootedRefCell** | 1.5664 ns 1.6050 ns 1.6371 ns | Send where T: Send | Sync where T: Send |
+| borrow_mut/AtomicRefCell | 6.0423 ns 6.0533 ns 6.0643 ns | Send where T: Send | Sync where T: Send |
+| borrow_mut/parking_lot::Mutex | 9.9365 ns 9.9496 ns 9.9647 ns | Send where T: Send | Sync where T: Send |
+| borrow_mut/Mutex         |  10.462 ns 10.476 ns 10.492 ns| Send where T: Send | Sync where T: Send |
 
 Benchmark sources are in `benches` and can be run with `cargo bench`.
 

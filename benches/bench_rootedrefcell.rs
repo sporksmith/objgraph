@@ -11,51 +11,46 @@ fn criterion_benchmark(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("borrow_mut");
         group.bench_function("RootedRefCell", |b| {
-            b.iter_batched(
+            b.iter_batched_ref(
                 || RootedRefCell::new(root.tag(), 0),
                 |x| {
-                    let rv = *x.borrow_mut(&lock);
-                    (x, rv)
+                    *x.borrow_mut(&lock) += 1;
                 },
                 BatchSize::SmallInput,
             );
         });
         group.bench_function("Mutex", |b| {
-            b.iter_batched(
+            b.iter_batched_ref(
                 || Mutex::new(0),
                 |x| {
-                    let rv = *x.lock().unwrap();
-                    (x, rv)
+                    *x.lock().unwrap() += 1;
                 },
                 BatchSize::SmallInput,
             );
         });
         group.bench_function("parking_lot::Mutex", |b| {
-            b.iter_batched(
+            b.iter_batched_ref(
                 || parking_lot::Mutex::new(0),
                 |x| {
-                    let rv = *x.lock();
-                    (x, rv)
+                    *x.lock() += 1;
                 },
                 BatchSize::SmallInput,
             );
         });
         group.bench_function("AtomicRefCell", |b| {
-            b.iter_batched(
+            b.iter_batched_ref(
                 || AtomicRefCell::new(0),
                 |x| {
-                    let rv = *x.borrow_mut();
-                    (x, rv)
+                    *x.borrow_mut() += 1;
                 },
                 BatchSize::SmallInput,
             );
         });
         group.bench_function("RefCell", |b| {
-            b.iter_batched(
+            b.iter_batched_ref(
                 || RefCell::new(0),
                 |x| {
-                    let rv = *x.borrow_mut();
-                    (x, rv)
+                    *x.borrow_mut() += 1;
                 },
                 BatchSize::SmallInput,
             );
