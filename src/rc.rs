@@ -1,5 +1,27 @@
 use crate::{GraphRootGuard, Tag};
-use std::rc::Rc;
+use std::cell::Cell;
+
+struct RootedRcInternal<T> {
+    val: T,
+    strong_count: Cell<u32>,
+}
+
+impl<T> RootedRcInternal<T> {
+    pub fn new(val: T) -> Self {
+        Self {
+            val,
+            strong_count: Cell::new(1),
+        }
+    }
+
+    pub fn inc_strong(&self) {
+        self.strong_count.set(self.strong_count.get() + 1)
+    }
+
+    pub fn dec_strong(&self) {
+        self.strong_count.set(self.strong_count.get() - 1)
+    }
+}
 
 /// Analagous to `std::rc::Rc`; in particular like `Rc` and unlike
 /// `std::sync::Arc`, it doesn't perform any atomic operations internally (which
@@ -12,9 +34,7 @@ use std::rc::Rc;
 /// current thread.
 pub struct RootedRc<T> {
     tag: Tag,
-    // TODO: Safety currently relies on assumptions about implementation details
-    // of Rc. Probably need to reimplement Rc.
-    val: Option<Rc<T>>,
+    internal: *mut RootedRcInternal<T>,
 }
 
 impl<T> RootedRc<T> {
@@ -22,7 +42,7 @@ impl<T> RootedRc<T> {
     pub fn new(tag: Tag, val: T) -> Self {
         Self {
             tag,
-            val: Some(Rc::new(val)),
+            internal: Box::into_raw(Box::new(RootedRcInternal::new(val))),
         }
     }
 
@@ -45,9 +65,11 @@ impl<T> RootedRc<T> {
 
     // SAFETY: The lock for the root with this object's tag must be held.
     pub unsafe fn unchecked_clone(&self) -> Self {
+        let internal = unsafe { self.internal.as_ref().unwrap() };
+        internal.inc_strong();
         Self {
-            tag: self.tag.clone(),
-            val: self.val.clone(),
+            tag: self.tag,
+            internal: self.internal,
         }
     }
 
@@ -57,17 +79,41 @@ impl<T> RootedRc<T> {
             "Tried using a lock for {:?} instead of {:?}",
             guard.guard.tag, self.tag
         );
-        self.val.take();
+        // SAFETY: pointer points to valid data by construction.
+        let internal = unsafe { self.internal.as_ref() }.unwrap();
+
+        internal.dec_strong();
+        self.internal = std::ptr::null_mut();
+        if internal.strong_count.get() == 0 {
+            // SAFETY: There are no remaining strong references to
+            // self.internal, and we know that no other threads could be
+            // manipulating the reference count in parallel since we have the
+            // root lock.
+            unsafe { Box::from_raw(self.internal) };
+        }
     }
 }
 
 impl<T> Drop for RootedRc<T> {
     fn drop(&mut self) {
-        if let Some(val) = self.val.take() {
-            // Unsafe to access val's contents. Leak them.
-            std::mem::forget(val);
-            // XXX: Maybe just log in release builds?
-            panic!("Dropped without calling `safely_drop`");
+        if !self.internal.is_null() {
+            log::error!("Dropped without calling `safely_drop`");
+
+            // We *can* continue without violating Rust safety properties; the
+            // underlying object will just be leaked, since the ref count will
+            // never reach zero.
+            //
+            // If we're not already panicking, it's useful to panic here to make
+            // the leak more visible (though maybe we should only do so in debug
+            // builds?).
+            //
+            // If we are already panicking though, that may already explain how
+            // a call to `safely_drop` got skipped, and panicking again would
+            // just obscure the original panic.
+            if !std::thread::panicking() {
+                // If we're not already panicking, do so now.
+                panic!("Dropped without calling `safely_drop`");
+            }
         }
     }
 }
@@ -83,7 +129,7 @@ impl<T> std::ops::Deref for RootedRc<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.val.as_ref().unwrap().deref()
+        &unsafe { self.internal.as_ref() }.unwrap().val
     }
 }
 
