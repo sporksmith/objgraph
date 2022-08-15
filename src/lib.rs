@@ -98,3 +98,26 @@ impl<'a> RootGuard<'a> {
 }
 pub mod rc;
 pub mod refcell;
+
+mod export {
+    #[no_mangle]
+    pub unsafe extern "C" fn root_new() -> *mut Root {
+        Box::into_raw(Box::new(Root::new()))
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn root_free(root: *mut Root) {
+        unsafe Box::from_raw(root)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn root_lock(root: *const Root) -> *mut RootGuard {
+        let root = unsafe {root.as_ref()}.unwrap();
+        Box::into_raw(Box::new(root.lock()))
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn rootguard_free(guard: *mut RootGuard) {
+        unsafe { Box::from_raw(guard) }
+    }
+}
