@@ -42,7 +42,7 @@ pub fn main() {
     };
     {
         let host1_lock = host1.root.lock();
-        let descriptor = RootedRc::new(host1.root.tag(), Descriptor { open: true });
+        let descriptor = RootedRc::new(&host1.root, Descriptor { open: true });
 
         // Process 0 has a reference to the descriptor.
         host1.processes.insert(

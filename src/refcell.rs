@@ -1,4 +1,4 @@
-use crate::{RootGuard, Tag};
+use crate::{Root, RootGuard, Tag};
 use std::cell::{Cell, UnsafeCell};
 
 pub struct RootedRefCell<T> {
@@ -10,9 +10,9 @@ pub struct RootedRefCell<T> {
 
 impl<T> RootedRefCell<T> {
     /// Create a RootedRefCell bound to the given tag.
-    pub fn new(tag: Tag, val: T) -> Self {
+    pub fn new(root: &Root, val: T) -> Self {
         Self {
-            tag,
+            tag: root.tag(),
             val: UnsafeCell::new(val),
             reader_count: Cell::new(0),
             writer: Cell::new(false),
@@ -128,13 +128,13 @@ mod test_rooted_refcell {
     fn construct_and_drop() {
         let root = Root::new();
         let _lock = root.lock();
-        let _ = RootedRefCell::new(root.tag(), 0);
+        let _ = RootedRefCell::new(&root, 0);
     }
 
     #[test]
     fn share_with_worker_thread() {
         let root = Root::new();
-        let rc = RootedRc::new(root.tag(), RootedRefCell::new(root.tag(), 0));
+        let rc = RootedRc::new(&root, RootedRefCell::new(&root, 0));
         let root = {
             let rc = {
                 let lock = root.lock();

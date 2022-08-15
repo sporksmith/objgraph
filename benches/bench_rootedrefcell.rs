@@ -37,7 +37,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut group = c.benchmark_group("borrow_mut");
         group.bench_function("RootedRefCell", |b| {
             b.iter_batched_ref(
-                || RootedRefCell::new(root.tag(), 0),
+                || RootedRefCell::new(&root, 0),
                 |x| rootedrefcell_borrow_mut(&lock, x),
                 BatchSize::SmallInput,
             );

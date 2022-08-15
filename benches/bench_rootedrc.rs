@@ -27,7 +27,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut group = c.benchmark_group("clone and drop");
         group.bench_function("RootedRc", |b| {
             b.iter_batched(
-                || RootedRc::new(root.tag(), ()),
+                || RootedRc::new(&root, ()),
                 |x| rootedrc_clone_and_drop(&lock, x),
                 BatchSize::SmallInput,
             );
@@ -63,7 +63,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         let mut v = Vec::new();
                         let lock = root.lock();
                         for _ in 0..black_box(N) {
-                            v.push(RootedRc::new(root.tag(), ()));
+                            v.push(RootedRc::new(&root, ()));
                             // No atomic operation here, but for consistency with Arc benchmark.
                             let t = v.last().unwrap().clone(&lock);
                             t.safely_drop(&lock);

@@ -11,7 +11,7 @@ use once_cell::sync::OnceCell;
 /// Every object root is assigned a Tag, which we ensure is globally unique.
 /// Each Tag value uniquely identifies a Root.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Tag {
+struct Tag {
     prefix: TagPrefixType,
     suffix: TagSuffixType,
 }
@@ -81,7 +81,7 @@ impl Root {
     }
 
     /// This root's globally unique tag.
-    pub fn tag(&self) -> Tag {
+    fn tag(&self) -> Tag {
         self.tag
     }
 }

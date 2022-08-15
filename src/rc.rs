@@ -1,4 +1,4 @@
-use crate::{RootGuard, Tag};
+use crate::{Root, RootGuard, Tag};
 use std::cell::Cell;
 
 struct RootedRcInternal<T> {
@@ -39,9 +39,9 @@ pub struct RootedRc<T> {
 
 impl<T> RootedRc<T> {
     /// Creates a new object guarded by the Root with the given `tag`.
-    pub fn new(tag: Tag, val: T) -> Self {
+    pub fn new(root: &Root, val: T) -> Self {
         Self {
-            tag,
+            tag: root.tag(),
             internal: Box::into_raw(Box::new(RootedRcInternal::new(val))),
         }
     }
@@ -145,7 +145,7 @@ mod test_rooted_rc {
     fn construct_and_drop() {
         let root = Root::new();
         let lock = root.lock();
-        let rc = RootedRc::new(root.tag(), 0);
+        let rc = RootedRc::new(&root, 0);
         rc.safely_drop(&lock)
     }
 
@@ -153,13 +153,13 @@ mod test_rooted_rc {
     #[should_panic]
     fn drop_without_lock_panics() {
         let root = Root::new();
-        let _ = RootedRc::new(root.tag(), 0);
+        let _ = RootedRc::new(&root, 0);
     }
 
     #[test]
     fn send_to_worker_thread() {
         let root = Root::new();
-        let rc = RootedRc::new(root.tag(), 0);
+        let rc = RootedRc::new(&root, 0);
         thread::spawn(move || {
             // Can access immutably without lock.
             let _ = *rc + 2;
@@ -175,20 +175,20 @@ mod test_rooted_rc {
     fn send_to_worker_thread_and_retrieve() {
         let root = Root::new();
         let root = thread::spawn(move || {
-            let rc = RootedRc::new(root.tag(), 0);
+            let rc = RootedRc::new(&root, 0);
             rc.safely_drop(&root.lock());
             root
         })
         .join()
         .unwrap();
-        let rc = RootedRc::new(root.tag(), 0);
+        let rc = RootedRc::new(&root, 0);
         rc.safely_drop(&root.lock());
     }
 
     #[test]
     fn clone_to_worker_thread() {
         let root = Root::new();
-        let rc = RootedRc::new(root.tag(), 0);
+        let rc = RootedRc::new(&root, 0);
 
         // Create a clone of rc that we'll pass to worker thread.
         let rc_thread = rc.clone(&root.lock());
