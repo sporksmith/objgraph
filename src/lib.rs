@@ -75,9 +75,9 @@ impl Root {
         }
     }
 
-    pub fn lock(&self) -> GraphRootGuard {
+    pub fn lock(&self) -> RootGuard {
         let lock = self.root.lock().unwrap();
-        GraphRootGuard::new(lock)
+        RootGuard::new(lock)
     }
 
     /// This root's globally unique tag.
@@ -87,11 +87,11 @@ impl Root {
 }
 
 /// Wrapper around a MutexGuard that sets and clears a tag.
-pub struct GraphRootGuard<'a> {
+pub struct RootGuard<'a> {
     guard: MutexGuard<'a, InnerRoot>,
 }
 
-impl<'a> GraphRootGuard<'a> {
+impl<'a> RootGuard<'a> {
     fn new(guard: MutexGuard<'a, InnerRoot>) -> Self {
         Self { guard }
     }

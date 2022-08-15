@@ -1,10 +1,10 @@
 use std::{rc::Rc, sync::Arc};
 
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
-use objgraph::{rc::RootedRc, GraphRootGuard, Root};
+use objgraph::{rc::RootedRc, Root, RootGuard};
 
 #[inline(never)]
-fn rootedrc_clone_and_drop(lock: &GraphRootGuard, x: RootedRc<()>) {
+fn rootedrc_clone_and_drop(lock: &RootGuard, x: RootedRc<()>) {
     x.clone(&lock).safely_drop(&lock);
     x.safely_drop(&lock);
 }

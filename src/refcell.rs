@@ -1,4 +1,4 @@
-use crate::{GraphRootGuard, Tag};
+use crate::{RootGuard, Tag};
 use std::cell::{Cell, UnsafeCell};
 
 pub struct RootedRefCell<T> {
@@ -28,7 +28,7 @@ impl<T> RootedRefCell<T> {
         // of the safety proof for making Self Send and Sync.
         //
         // Alternatively we could drop that requirement and add a dynamic check.
-        root_guard: &'a GraphRootGuard<'a>,
+        root_guard: &'a RootGuard<'a>,
     ) -> RootedRefCellRef<'a, T> {
         // Prove that the lock is held for this tag.
         assert_eq!(
@@ -50,7 +50,7 @@ impl<T> RootedRefCell<T> {
     pub fn borrow_mut<'a>(
         &'a self,
         // 'a required here for safety, as for `borrow`.
-        root_guard: &'a GraphRootGuard<'a>,
+        root_guard: &'a RootGuard<'a>,
     ) -> RootedRefCellRefMut<'a, T> {
         // Prove that the lock is held for this tag.
         assert_eq!(

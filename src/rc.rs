@@ -1,4 +1,4 @@
-use crate::{GraphRootGuard, Tag};
+use crate::{RootGuard, Tag};
 use std::cell::Cell;
 
 struct RootedRcInternal<T> {
@@ -51,7 +51,7 @@ impl<T> RootedRc<T> {
     /// Intentionally named clone to shadow Self::deref()::clone().
     ///
     /// Panics if `guard` doesn't match this objects tag.
-    pub fn clone(&self, guard: &GraphRootGuard) -> Self {
+    pub fn clone(&self, guard: &RootGuard) -> Self {
         assert_eq!(
             guard.guard.tag, self.tag,
             "Tried using a lock for {:?} instead of {:?}",
@@ -73,7 +73,7 @@ impl<T> RootedRc<T> {
         }
     }
 
-    pub fn safely_drop(mut self, guard: &GraphRootGuard) {
+    pub fn safely_drop(mut self, guard: &RootGuard) {
         assert_eq!(
             guard.guard.tag, self.tag,
             "Tried using a lock for {:?} instead of {:?}",

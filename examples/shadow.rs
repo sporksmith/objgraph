@@ -1,4 +1,4 @@
-use objgraph::{rc::RootedRc, GraphRootGuard, Root};
+use objgraph::{rc::RootedRc, Root, RootGuard};
 use std::{collections::HashMap, thread};
 
 struct Host {
@@ -20,7 +20,7 @@ struct Process {
 }
 
 impl Process {
-    pub fn safely_drop(self, guard: &GraphRootGuard) {
+    pub fn safely_drop(self, guard: &RootGuard) {
         for (_, d) in self.descriptors {
             d.safely_drop(&guard)
         }
