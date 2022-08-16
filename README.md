@@ -16,15 +16,11 @@ since the Hosts would then not be `Send`.
 
 We could use `Arc`, but this would introduce a lot of new costly atomic operations.
 
-Here we encode Shadow's original safety model into Rust's type system. Each host
-in Shadow becomes a `crate::Root`. Reference counting is done with
-`crate::RootedRc`, which is functionally an `Rc`, but has runtime checks to
-ensure that the reference count is only ever manipulated with the owning
-`Root`'s lock held. We mark `crate::RootedRc` as `Send` and `Sync`, allowing it
-to be sent across threads.
-
-We should be able to similarly implement `RootedRefCell` to allow us to do `RefCell`-like
-borrow tracking without atomic operations, while retaining `Send` and `Sync`.
+Here we encode Shadow's original safety model into Rust's type system. Shadow's
+host lock is replaced with a `crate::Root`, which can be locked.  Instances of
+`crate::rc::RootedRc` and `crate::refcell::RootedRefCell` are associated with a
+`Root`, and require the caller to prove they hold that `Root`'s lock; this allows
+them to avoid having to perform any additional atomic operations.
 
 ## Performance And Send/Sync
 
@@ -53,17 +49,13 @@ Benchmark sources are in `benches` and can be run with `cargo bench`.
 
 ## Usage and testing
 
-There is a mock-up example of Shadow's intended usage of this crate in
-`examples/shadow.rs`, which can be run with `cargo run --example shadow`. It
-also passes [miri](https://github.com/rust-lang/miri) (`cargo miri run --example shadow`).
+There are some examples of intended usage in the `examples` directory.
 
-There are also unit tests, which should also pass `miri`, with
-`-Zmiri-ignore-leaks`. See https://github.com/sporksmith/objgraph/issues/1
+See `maint/checks` for scripts to run tests, examples, miri, etc.
+
+`cargo bench` runs the included benchmarks.
 
 ## Status
 
 This is currently a sketch for discussion and analysis. It needs more review
 and testing to validate soundness.
-
-There is also a lot of room for ergonomic and performance improvements for this
-to work well as a general-purpose crate.
