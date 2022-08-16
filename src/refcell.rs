@@ -42,7 +42,7 @@ impl<T> RootedRefCell<T> {
         self.reader_count.set(self.reader_count.get() + 1);
 
         // Borrow from the guard to ensure the lock can't be dropped.
-        RootedRefCellRef { guard: &self }
+        RootedRefCellRef { guard: self }
     }
 
     /// Borrow a mutable reference. Panics if `root_guard` is for the wrong tag,
@@ -64,7 +64,11 @@ impl<T> RootedRefCell<T> {
 
         self.writer.set(true);
 
-        RootedRefCellRefMut { guard: &self }
+        RootedRefCellRefMut { guard: self }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.val.into_inner()
     }
 }
 
@@ -79,7 +83,7 @@ impl<'a, T> std::ops::Deref for RootedRefCellRef<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.guard.val.get() }
+        unsafe { self.guard.val.get().as_ref().unwrap() }
     }
 }
 
@@ -99,13 +103,13 @@ impl<'a, T> std::ops::Deref for RootedRefCellRefMut<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.guard.val.get() }
+        unsafe { self.guard.val.get().as_ref().unwrap() }
     }
 }
 
 impl<'a, T> std::ops::DerefMut for RootedRefCellRefMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.guard.val.get() }
+        unsafe { self.guard.val.get().as_mut().unwrap() }
     }
 }
 

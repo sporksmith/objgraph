@@ -39,7 +39,7 @@ impl Tag {
         // share memory, and to handle the case where multiple instances of this module
         // end up within a single process.
         static TAG_PREFIX: OnceCell<TagPrefixType> = OnceCell::new();
-        let prefix = *TAG_PREFIX.get_or_init(|| rand::prelude::random());
+        let prefix = *TAG_PREFIX.get_or_init(rand::prelude::random);
 
         static NEXT_TAG_SUFFIX: TagSuffixAtomicType = TagSuffixAtomicType::new(0);
         let suffix: TagSuffixType = NEXT_TAG_SUFFIX.fetch_add(1, Ordering::Relaxed);
@@ -86,6 +86,12 @@ impl Root {
     }
 }
 
+impl Default for Root {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Wrapper around a MutexGuard that sets and clears a tag.
 pub struct RootGuard<'a> {
     guard: MutexGuard<'a, InnerRoot>,
@@ -114,7 +120,7 @@ mod export {
 
     #[no_mangle]
     pub unsafe extern "C" fn root_lock(root: *const Root) -> *mut RootGuard<'static> {
-        let root = unsafe {root.as_ref()}.unwrap();
+        let root = unsafe { root.as_ref() }.unwrap();
         Box::into_raw(Box::new(root.lock()))
     }
 

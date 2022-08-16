@@ -63,8 +63,12 @@ impl<T> RootedRc<T> {
         unsafe { self.unchecked_clone() }
     }
 
-    // SAFETY: The lock for the root with this object's tag must be held.
+    /// # Safety
+    ///
+    /// The lock for the root with this object's tag must be held.
     pub unsafe fn unchecked_clone(&self) -> Self {
+        // SAFETY: Pointer should be valid by construction. Caller is
+        // responsible for ensuring no parallel access.
         let internal = unsafe { self.internal.as_ref().unwrap() };
         internal.inc_strong();
         Self {
@@ -79,18 +83,20 @@ impl<T> RootedRc<T> {
             "Tried using a lock for {:?} instead of {:?}",
             guard.guard.tag, self.tag
         );
-        // SAFETY: pointer points to valid data by construction.
-        let internal = unsafe { self.internal.as_ref() }.unwrap();
-
-        internal.dec_strong();
-        self.internal = std::ptr::null_mut();
-        if internal.strong_count.get() == 0 {
+        let drop_internal = {
+            // SAFETY: pointer points to valid data by construction.
+            let internal = unsafe { self.internal.as_ref() }.unwrap();
+            internal.dec_strong();
+            internal.strong_count.get() == 0
+        };
+        if drop_internal {
             // SAFETY: There are no remaining strong references to
             // self.internal, and we know that no other threads could be
             // manipulating the reference count in parallel since we have the
             // root lock.
             unsafe { Box::from_raw(self.internal) };
         }
+        self.internal = std::ptr::null_mut();
     }
 }
 

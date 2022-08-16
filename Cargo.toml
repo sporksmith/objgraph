@@ -1,6 +1,6 @@
 [package]
 name = "objgraph"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -13,6 +13,10 @@ rand="0.8.5"
 [[example]]
 name="shadow"
 path="examples/shadow.rs"
+
+[[example]]
+name="shadow-hierarchy"
+path="examples/shadow_hierarchy.rs"
 
 [dev-dependencies]
 atomic_refcell = "0.1"
@@ -27,7 +31,3 @@ harness = false
 [[bench]]
 name = "bench_rootedrefcell"
 harness = false
-
-[lib]
-path = "src/lib.rs"
-crate-type = ["staticlib"]
