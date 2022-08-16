@@ -79,18 +79,19 @@ impl<T> RootedRc<T> {
             "Tried using a lock for {:?} instead of {:?}",
             guard.guard.tag, self.tag
         );
-        // SAFETY: pointer points to valid data by construction.
-        let internal = unsafe { self.internal.as_ref() }.unwrap();
-
-        internal.dec_strong();
-        self.internal = std::ptr::null_mut();
-        if internal.strong_count.get() == 0 {
+        if {
+            // SAFETY: pointer points to valid data by construction.
+            let internal = unsafe { self.internal.as_ref() }.unwrap();
+            internal.dec_strong();
+            internal.strong_count.get() == 0
+        } {
             // SAFETY: There are no remaining strong references to
             // self.internal, and we know that no other threads could be
             // manipulating the reference count in parallel since we have the
             // root lock.
             unsafe { Box::from_raw(self.internal) };
         }
+        self.internal = std::ptr::null_mut();
     }
 }
 
