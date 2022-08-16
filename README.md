@@ -2,7 +2,9 @@ This is a proof of concept for safe, efficient object graphs in Rust.  It is
 inspired by the concurrency model used in
 [Shadow's](https://github.com/shadow/shadow) C implementation, and is intended
 as a potential path toward migrating Shadow's C code to Rust without first
-having to extensively refactor and/or introduce a lot of atomic operations.
+having to extensively refactor and/or introduce a lot of atomic operations
+(which are intrinsically moderately expensive, and can result in additional
+cache misses, and prevent the compiler from reordering some code).
 
 Shadow simulates a network of Hosts, each of which has a lock associated with
 it.  Inside the Hosts are a graph of ref-counted objects. They are meant to only
@@ -21,6 +23,16 @@ host lock is replaced with a `crate::Root`, which can be locked.  Instances of
 `crate::rc::RootedRc` and `crate::refcell::RootedRefCell` are associated with a
 `Root`, and require the caller to prove they hold that `Root`'s lock; this allows
 them to avoid having to perform any additional atomic operations.
+
+It's not clear to me yet whether the performance gains are generally worth the
+extra complexity vs. just using more "mainstream" `Send` and `Sync` equivalents.
+In the case of shadow, and maybe other projects being ported from C, the idea is
+to allow porting C code to Rust code in a relatively straightforward way without
+having to worry too much about "death by a thousand cuts" performance
+degradation from introducing many new atomic operations. Once we have used this
+technique to migrate most of shadow's code to Rust, the plan will be to compare
+macro benchmarks with this crate's internals replaced by the more mainstream
+thread-safe equivalents.
 
 ## Performance And Send/Sync
 
