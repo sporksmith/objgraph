@@ -39,7 +39,7 @@ impl Tag {
         // share memory, and to handle the case where multiple instances of this module
         // end up within a single process.
         static TAG_PREFIX: OnceCell<TagPrefixType> = OnceCell::new();
-        let prefix = *TAG_PREFIX.get_or_init(|| rand::prelude::random());
+        let prefix = *TAG_PREFIX.get_or_init(rand::prelude::random);
 
         static NEXT_TAG_SUFFIX: TagSuffixAtomicType = TagSuffixAtomicType::new(0);
         let suffix: TagSuffixType = NEXT_TAG_SUFFIX.fetch_add(1, Ordering::Relaxed);
@@ -83,6 +83,12 @@ impl Root {
     /// This root's globally unique tag.
     fn tag(&self) -> Tag {
         self.tag
+    }
+}
+
+impl Default for Root {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
