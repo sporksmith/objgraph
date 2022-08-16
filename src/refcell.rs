@@ -79,7 +79,7 @@ impl<'a, T> std::ops::Deref for RootedRefCellRef<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.guard.val.get() }
+        unsafe { self.guard.val.get().as_ref().unwrap() }
     }
 }
 
@@ -99,13 +99,13 @@ impl<'a, T> std::ops::Deref for RootedRefCellRefMut<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.guard.val.get() }
+        unsafe { self.guard.val.get().as_ref().unwrap() }
     }
 }
 
 impl<'a, T> std::ops::DerefMut for RootedRefCellRefMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.guard.val.get() }
+        unsafe { self.guard.val.get().as_mut().unwrap() }
     }
 }
 
