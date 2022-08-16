@@ -24,7 +24,7 @@ struct Process {
 impl Process {
     pub fn safely_drop(self, guard: &RootGuard) {
         for (_, d) in self.descriptors {
-            d.safely_drop(&guard)
+            d.safely_drop(guard)
         }
     }
 }

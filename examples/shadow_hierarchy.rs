@@ -15,8 +15,8 @@ mod v1 {
     struct Host {}
     impl Host {
         pub fn run(&mut self, objs: &HostObjs, root_guard: &RootGuard, pid: usize, tid: usize) {
-            let processes_guard = objs.processes.borrow(&root_guard);
-            let mut process_guard = processes_guard.get(pid).unwrap().borrow_mut(&root_guard);
+            let processes_guard = objs.processes.borrow(root_guard);
+            let mut process_guard = processes_guard.get(pid).unwrap().borrow_mut(root_guard);
 
             // Host bookkeeping
 
@@ -35,8 +35,8 @@ mod v1 {
             host: &mut Host,
             tid: usize,
         ) {
-            let threads_guard = objs.threads.borrow(&root_guard);
-            let mut thread_guard = threads_guard.get(tid).unwrap().borrow_mut(&root_guard);
+            let threads_guard = objs.threads.borrow(root_guard);
+            let mut thread_guard = threads_guard.get(tid).unwrap().borrow_mut(root_guard);
 
             // Process bookkeeping
 
@@ -125,11 +125,11 @@ mod v2 {
         pub fn run(&mut self, objs: &HostObjs, root_guard: &RootGuard, pid: usize, tid: usize) {
             let process = self
                 .processes
-                .borrow(&root_guard)
+                .borrow(root_guard)
                 .get(pid)
                 .unwrap()
-                .clone(&root_guard);
-            let mut process_guard = process.borrow_mut(&root_guard);
+                .clone(root_guard);
+            let mut process_guard = process.borrow_mut(root_guard);
 
             // Host bookkeeping
 
@@ -162,11 +162,11 @@ mod v2 {
         ) {
             let thread = self
                 .threads
-                .borrow(&root_guard)
+                .borrow(root_guard)
                 .get(tid)
                 .unwrap()
-                .clone(&root_guard);
-            let mut thread_guard = thread.borrow_mut(&root_guard);
+                .clone(root_guard);
+            let mut thread_guard = thread.borrow_mut(root_guard);
 
             // Process bookkeeping
 
