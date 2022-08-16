@@ -1,6 +1,13 @@
 use crate::{Root, RootGuard, Tag};
 use std::cell::{Cell, UnsafeCell};
 
+/// Analagous to `std::cell::RefCell`. In particular like `RefCell` and unlike
+/// `std::sync::Mutex`, it  doesn't perform any atomic operations internally,
+/// making it relatively inexpensive.
+///
+/// Unlike `RefCell`, this type is `Send` and `Sync` if `T` is Send. This is
+/// safe because the owner is required to prove ownership of the associated
+/// `Root` lock to perform any sensitive operations.
 pub struct RootedRefCell<T> {
     tag: Tag,
     val: UnsafeCell<T>,
@@ -9,7 +16,7 @@ pub struct RootedRefCell<T> {
 }
 
 impl<T> RootedRefCell<T> {
-    /// Create a RootedRefCell bound to the given tag.
+    /// Create a RootedRefCell associated with `root`.
     pub fn new(root: &Root, val: T) -> Self {
         Self {
             tag: root.tag(),
@@ -19,15 +26,13 @@ impl<T> RootedRefCell<T> {
         }
     }
 
-    /// Borrow a reference. Panics if `root_guard` is for the wrong tag, or if
-    /// this object is alread mutably borrowed.
+    /// Borrow a reference. Panics if `root_guard` is for the wrong `Root`, or
+    /// if this object is alread mutably borrowed.
     pub fn borrow<'a>(
         &'a self,
         // This 'a statically enforces that the root lock can't be dropped
         // while the returned guard is still outstanding. i.e. it is part
         // of the safety proof for making Self Send and Sync.
-        //
-        // Alternatively we could drop that requirement and add a dynamic check.
         root_guard: &'a RootGuard<'a>,
     ) -> RootedRefCellRef<'a, T> {
         // Prove that the lock is held for this tag.
@@ -45,8 +50,8 @@ impl<T> RootedRefCell<T> {
         RootedRefCellRef { guard: self }
     }
 
-    /// Borrow a mutable reference. Panics if `root_guard` is for the wrong tag,
-    /// or if this object is already borrowed.
+    /// Borrow a mutable reference. Panics if `root_guard` is for the wrong
+    /// `Root`, or if this object is already borrowed.
     pub fn borrow_mut<'a>(
         &'a self,
         // 'a required here for safety, as for `borrow`.

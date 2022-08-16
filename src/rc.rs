@@ -23,22 +23,25 @@ impl<T> RootedRcInternal<T> {
     }
 }
 
-/// Analagous to `std::rc::Rc`; in particular like `Rc` and unlike
-/// `std::sync::Arc`, it doesn't perform any atomic operations internally (which
-/// are moderately expensive).
+/// Analagous to `std::rc::Rc`. In particular like `Rc` and unlike
+/// `std::sync::Arc`, it doesn't perform any atomic operations internally,
+/// making it relatively inexpensive
 ///
-/// Unlike `Rc`, this type `Send` and `Sync` if `T` is. It leverages lock-tracking
-/// to ensure `Rc` operations are protected.
+/// Unlike `Rc`, this type `Send` and `Sync` if `T` is. This is safe because
+/// the owner is required to prove ownership of the associated `Root` lock
+/// to perform any sensitive operations.
 ///
-/// Panics if dropped without the corresponding Root lock being held by the
-/// current thread.
+/// Instances must be destroyed using the `safely_drop` method, which validates
+/// that the lock is held before manipulating reference counts, etc.
+/// Failing to call `safely_drop` results in a `panic` in debug builds,
+/// or leaking the object in release builds.
 pub struct RootedRc<T> {
     tag: Tag,
     internal: *mut RootedRcInternal<T>,
 }
 
 impl<T> RootedRc<T> {
-    /// Creates a new object guarded by the Root with the given `tag`.
+    /// Creates a new object associated with `root`.
     pub fn new(root: &Root, val: T) -> Self {
         Self {
             tag: root.tag(),
@@ -50,7 +53,7 @@ impl<T> RootedRc<T> {
     ///
     /// Intentionally named clone to shadow Self::deref()::clone().
     ///
-    /// Panics if `guard` doesn't match this objects tag.
+    /// Panics if `guard` did not originate from the associated `Root`.
     pub fn clone(&self, guard: &RootGuard) -> Self {
         assert_eq!(
             guard.guard.tag, self.tag,
@@ -65,8 +68,8 @@ impl<T> RootedRc<T> {
 
     /// # Safety
     ///
-    /// The lock for the root with this object's tag must be held.
-    pub unsafe fn unchecked_clone(&self) -> Self {
+    /// There must be no other threads accessing this object, or clones of this object.
+    unsafe fn unchecked_clone(&self) -> Self {
         // SAFETY: Pointer should be valid by construction. Caller is
         // responsible for ensuring no parallel access.
         let internal = unsafe { self.internal.as_ref().unwrap() };
@@ -77,6 +80,13 @@ impl<T> RootedRc<T> {
         }
     }
 
+    /// Safely drop this object, dropping the internal value if no other
+    /// references to it remain.
+    ///
+    /// Instances that are dropped *without* calling this method cannot be
+    /// safely cleaned up. In debug builds this will result in a `panic`.
+    /// Otherwise the underlying reference count will simply not be decremented,
+    /// ultimately resulting in the enclosed value never being dropped.
     pub fn safely_drop(mut self, guard: &RootGuard) {
         assert_eq!(
             guard.guard.tag, self.tag,

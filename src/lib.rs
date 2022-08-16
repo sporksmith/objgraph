@@ -55,12 +55,8 @@ struct InnerRoot {
     tag: Tag,
 }
 
-/// Root of an "object graph". It holds a lock over the contents of the graph,
-/// and ensures tracks which tags are locked by the current thread.
-///
-/// We only support a thread having one Root of any given type T being locked at
-/// once. Crate users should use a private type T that they own to avoid
-/// conflicts.
+/// Root of an "object graph". Locking a `Root` allows inexpensive access
+/// to associated `RootedRc`s and `RootedRefCell`s.
 pub struct Root {
     root: Mutex<InnerRoot>,
     tag: Tag,
@@ -92,7 +88,7 @@ impl Default for Root {
     }
 }
 
-/// Wrapper around a MutexGuard that sets and clears a tag.
+/// Used to prove ownership of the corresponding `Root` lock.
 pub struct RootGuard<'a> {
     guard: MutexGuard<'a, InnerRoot>,
 }
