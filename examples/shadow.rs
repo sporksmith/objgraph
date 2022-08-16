@@ -1,3 +1,5 @@
+/// Sketch of how shared ownership of Descriptors might look in
+/// the [shadow](https://github.com/shadow/shadow) simulator.
 use objgraph::{rc::RootedRc, Root, RootGuard};
 use std::{collections::HashMap, thread};
 
@@ -105,4 +107,10 @@ pub fn main() {
     // Wait for worker to finish and get hosts back.
     let _hosts = worker.join().unwrap();
     println!("worker done as expected");
+}
+
+// For `cargo test --examples`
+#[test]
+fn test() {
+    main();
 }

@@ -114,7 +114,7 @@ mod export {
 
     #[no_mangle]
     pub unsafe extern "C" fn root_lock(root: *const Root) -> *mut RootGuard<'static> {
-        let root = unsafe {root.as_ref()}.unwrap();
+        let root = unsafe { root.as_ref() }.unwrap();
         Box::into_raw(Box::new(root.lock()))
     }
 
