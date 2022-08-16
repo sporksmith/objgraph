@@ -66,6 +66,10 @@ impl<T> RootedRefCell<T> {
 
         RootedRefCellRefMut { guard: &self }
     }
+
+    pub fn into_inner(self) -> T {
+        self.val.into_inner()
+    }
 }
 
 unsafe impl<T: Send> Send for RootedRefCell<T> {}
