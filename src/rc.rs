@@ -150,7 +150,7 @@ impl<T> std::ops::Deref for RootedRc<T> {
 
 #[cfg(test)]
 mod test_rooted_rc {
-    use std::thread;
+    use std::{sync::Arc, thread};
 
     use crate::Root;
 
@@ -220,6 +220,33 @@ mod test_rooted_rc {
         .unwrap();
 
         // Take the lock to drop rc
+        rc.safely_drop(&root.lock());
+    }
+
+    #[test]
+    fn threads_contend_over_lock() {
+        let root = Arc::new(Root::new());
+        let rc = RootedRc::new(&root, 0);
+
+        let threads: Vec<_> = (0..100)
+            .map(|_| {
+                // Create a clone of rc that we'll pass to worker thread.
+                let rc = rc.clone(&root.lock());
+                let root = root.clone();
+
+                thread::spawn(move || {
+                    let lock = root.lock();
+                    let rc2 = rc.clone(&lock);
+                    rc.safely_drop(&lock);
+                    rc2.safely_drop(&lock);
+                })
+            })
+            .collect();
+
+        for handle in threads {
+            handle.join().unwrap();
+        }
+
         rc.safely_drop(&root.lock());
     }
 }

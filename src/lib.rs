@@ -1,9 +1,12 @@
 // https://github.com/rust-lang/rfcs/blob/master/text/2585-unsafe-block-in-unsafe-fn.md
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Mutex, MutexGuard,
+use std::{
+    marker::PhantomData,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Mutex, MutexGuard,
+    },
 };
 
 use once_cell::sync::OnceCell;
@@ -91,11 +94,21 @@ impl Default for Root {
 /// Used to prove ownership of the corresponding `Root` lock.
 pub struct RootGuard<'a> {
     guard: MutexGuard<'a, InnerRoot>,
+    // RootedRc and RootedRefCell rely on `RootGuard` being `!Sync`. They take
+    // immutable/shared references to Self to prove that no other thread
+    // currently has access.
+    //
+    // Alternatively, those APIs could change to require `&mut RootGuard`, but I
+    // think that makes it more difficult to use.
+    _notsync: std::marker::PhantomData<std::cell::Cell<()>>,
 }
 
 impl<'a> RootGuard<'a> {
     fn new(guard: MutexGuard<'a, InnerRoot>) -> Self {
-        Self { guard }
+        Self {
+            guard,
+            _notsync: PhantomData,
+        }
     }
 }
 pub mod rc;
