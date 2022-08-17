@@ -65,7 +65,7 @@ jobs:
       - name: miri
         run: |
           rustup toolchain install nightly-2022-08-16
-          rustup default nightly
+          rustup default nightly-2022-08-16
           rustup component add miri
           ./maint/checks/miri.sh
 
