@@ -2,7 +2,7 @@
 /// [shadow](https://github.com/shadow/shadow) simulator.
 
 mod v1 {
-    use objgraph::{refcell::RootedRefCell, Root, RootGuard};
+    use objgraph::{refcell::RootedRefCell, Root};
 
     /// Everything related to a single host, stored "flat".
     struct HostObjs {
@@ -14,13 +14,13 @@ mod v1 {
 
     struct Host {}
     impl Host {
-        pub fn run(&mut self, objs: &HostObjs, root_guard: &RootGuard, pid: usize, tid: usize) {
-            let processes_guard = objs.processes.borrow(root_guard);
-            let mut process_guard = processes_guard.get(pid).unwrap().borrow_mut(root_guard);
+        pub fn run(&mut self, objs: &HostObjs, pid: usize, tid: usize) {
+            let processes_guard = objs.processes.borrow(&objs.root);
+            let mut process_guard = processes_guard.get(pid).unwrap().borrow_mut(&objs.root);
 
             // Host bookkeeping
 
-            process_guard.run(objs, root_guard, self, tid);
+            process_guard.run(objs, self, tid);
 
             // Host bookkeeping
         }
@@ -28,19 +28,13 @@ mod v1 {
 
     struct Process {}
     impl Process {
-        pub fn run(
-            &mut self,
-            objs: &HostObjs,
-            root_guard: &RootGuard,
-            host: &mut Host,
-            tid: usize,
-        ) {
-            let threads_guard = objs.threads.borrow(root_guard);
-            let mut thread_guard = threads_guard.get(tid).unwrap().borrow_mut(root_guard);
+        pub fn run(&mut self, objs: &HostObjs, host: &mut Host, tid: usize) {
+            let threads_guard = objs.threads.borrow(&objs.root);
+            let mut thread_guard = threads_guard.get(tid).unwrap().borrow_mut(&objs.root);
 
             // Process bookkeeping
 
-            thread_guard.run(objs, root_guard, host, self);
+            thread_guard.run(objs, host, self);
 
             // Process bookkeeping
         }
@@ -48,13 +42,7 @@ mod v1 {
 
     struct Thread {}
     impl Thread {
-        pub fn run(
-            &mut self,
-            _objs: &HostObjs,
-            _root_guard: &RootGuard,
-            _host: &mut Host,
-            _process: &mut Process,
-        ) {
+        pub fn run(&mut self, _objs: &HostObjs, _host: &mut Host, _process: &mut Process) {
             // Do stuff. run, invoke syscall handlers, etc.
         }
     }
@@ -87,9 +75,8 @@ mod v1 {
         };
 
         // Run thread tid=0 in process pid=0
-        let guard = objs.root.lock();
-        let mut host_guard = objs.host.borrow_mut(&guard);
-        host_guard.run(&objs, &guard, 0, 0);
+        let mut host_guard = objs.host.borrow_mut(&objs.root);
+        host_guard.run(&objs, 0, 0);
         // This works ok, but when we have a reference to any single thread or process,
         // we have to immutably borrow the whole list of threads or processes as well.
         //
@@ -104,7 +91,7 @@ mod v1 {
 /// be careful to ensure the RootedRc's are dropped explicitly to prevent leaks
 /// (or panics in debug builds).
 mod v2 {
-    use objgraph::{rc::RootedRc, refcell::RootedRefCell, Root, RootGuard};
+    use objgraph::{rc::RootedRc, refcell::RootedRefCell, Root};
 
     /// Everything related to a single host, stored "flat".
     struct HostObjs {
@@ -113,8 +100,7 @@ mod v2 {
     }
     impl Drop for HostObjs {
         fn drop(&mut self) {
-            let guard = self.root.lock();
-            self.host.borrow_mut(&guard).shutdown(&guard);
+            self.host.borrow_mut(&self.root).shutdown(&self.root);
         }
     }
 
@@ -122,29 +108,29 @@ mod v2 {
         processes: RootedRefCell<Vec<RootedRc<RootedRefCell<Process>>>>,
     }
     impl Host {
-        pub fn run(&mut self, objs: &HostObjs, root_guard: &RootGuard, pid: usize, tid: usize) {
+        pub fn run(&mut self, objs: &HostObjs, pid: usize, tid: usize) {
             let process = self
                 .processes
-                .borrow(root_guard)
+                .borrow(&objs.root)
                 .get(pid)
                 .unwrap()
-                .clone(root_guard);
-            let mut process_guard = process.borrow_mut(root_guard);
+                .clone(&objs.root);
+            let mut process_guard = process.borrow_mut(&objs.root);
 
             // Host bookkeeping
 
-            process_guard.run(objs, root_guard, self, tid);
+            process_guard.run(objs, self, tid);
             drop(process_guard);
-            process.safely_drop(root_guard)
+            process.safely_drop(&objs.root)
 
             // Host bookkeeping
         }
 
-        pub fn shutdown(&mut self, root_guard: &RootGuard) {
-            let mut processes = self.processes.borrow_mut(root_guard);
+        pub fn shutdown(&mut self, root: &Root) {
+            let mut processes = self.processes.borrow_mut(root);
             for process in processes.drain(..) {
-                process.borrow_mut(root_guard).shutdown(root_guard);
-                process.safely_drop(root_guard);
+                process.borrow_mut(root).shutdown(root);
+                process.safely_drop(root);
             }
         }
     }
@@ -153,47 +139,35 @@ mod v2 {
         threads: RootedRefCell<Vec<RootedRc<RootedRefCell<Thread>>>>,
     }
     impl Process {
-        pub fn run(
-            &mut self,
-            objs: &HostObjs,
-            root_guard: &RootGuard,
-            host: &mut Host,
-            tid: usize,
-        ) {
+        pub fn run(&mut self, objs: &HostObjs, host: &mut Host, tid: usize) {
             let thread = self
                 .threads
-                .borrow(root_guard)
+                .borrow(&objs.root)
                 .get(tid)
                 .unwrap()
-                .clone(root_guard);
-            let mut thread_guard = thread.borrow_mut(root_guard);
+                .clone(&objs.root);
+            let mut thread_guard = thread.borrow_mut(&objs.root);
 
             // Process bookkeeping
 
-            thread_guard.run(objs, root_guard, host, self);
+            thread_guard.run(objs, host, self);
             drop(thread_guard);
-            thread.safely_drop(root_guard);
+            thread.safely_drop(&objs.root);
 
             // Process bookkeeping
         }
 
-        pub fn shutdown(&mut self, root_guard: &RootGuard) {
-            let mut threads = self.threads.borrow_mut(root_guard);
+        pub fn shutdown(&mut self, root: &Root) {
+            let mut threads = self.threads.borrow_mut(root);
             for thread in threads.drain(..) {
-                thread.safely_drop(root_guard)
+                thread.safely_drop(root)
             }
         }
     }
 
     struct Thread {}
     impl Thread {
-        pub fn run(
-            &mut self,
-            _objs: &HostObjs,
-            _root_guard: &RootGuard,
-            _host: &mut Host,
-            _process: &mut Process,
-        ) {
+        pub fn run(&mut self, _objs: &HostObjs, _host: &mut Host, _process: &mut Process) {
             // Do stuff. run, invoke syscall handlers, etc.
         }
     }
@@ -221,9 +195,8 @@ mod v2 {
         };
 
         // Run thread tid=0 in process pid=0
-        let guard = objs.root.lock();
-        let mut host_guard = objs.host.borrow_mut(&guard);
-        host_guard.run(&objs, &guard, 0, 0);
+        let mut host_guard = objs.host.borrow_mut(&objs.root);
+        host_guard.run(&objs, 0, 0);
     }
 }
 

@@ -2,11 +2,11 @@ use std::{cell::RefCell, sync::Mutex};
 
 use atomic_refcell::AtomicRefCell;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use objgraph::{refcell::RootedRefCell, Root, RootGuard};
+use objgraph::{refcell::RootedRefCell, Root};
 
 #[inline(never)]
-fn rootedrefcell_borrow_mut(lock: &RootGuard, x: &RootedRefCell<i32>) {
-    *x.borrow_mut(lock) += 1;
+fn rootedrefcell_borrow_mut(root: &Root, x: &RootedRefCell<i32>) {
+    *x.borrow_mut(root) += 1;
 }
 
 #[inline(never)]
@@ -30,15 +30,16 @@ fn refcell_borrow_mut(x: &RefCell<i32>) {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let root: &'static _ = Box::leak(Box::new(Root::new()));
-    let lock: &'static _ = Box::leak(Box::new(root.lock()));
-
     {
         let mut group = c.benchmark_group("borrow_mut");
         group.bench_function("RootedRefCell", |b| {
             b.iter_batched_ref(
-                || RootedRefCell::new(root, 0),
-                |x| rootedrefcell_borrow_mut(lock, x),
+                || {
+                    let root = Root::new();
+                    let x = RootedRefCell::new(&root, 0);
+                    (root, x)
+                },
+                |(root, x)| rootedrefcell_borrow_mut(root, x),
                 BatchSize::SmallInput,
             );
         });

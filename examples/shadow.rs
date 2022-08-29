@@ -1,6 +1,6 @@
 /// Sketch of how shared ownership of Descriptors might look in
 /// the [shadow](https://github.com/shadow/shadow) simulator.
-use objgraph::{rc::RootedRc, Root, RootGuard};
+use objgraph::{rc::RootedRc, Root};
 use std::{collections::HashMap, thread};
 
 struct Host {
@@ -10,9 +10,8 @@ struct Host {
 
 impl Drop for Host {
     fn drop(&mut self) {
-        let guard = self.root.lock();
         for (_, p) in self.processes.drain() {
-            p.safely_drop(&guard);
+            p.safely_drop(&self.root);
         }
     }
 }
@@ -22,9 +21,9 @@ struct Process {
 }
 
 impl Process {
-    pub fn safely_drop(self, guard: &RootGuard) {
+    pub fn safely_drop(self, root: &Root) {
         for (_, d) in self.descriptors {
-            d.safely_drop(guard)
+            d.safely_drop(root)
         }
     }
 }
@@ -43,7 +42,6 @@ pub fn main() {
         root: Root::new(),
     };
     {
-        let host1_lock = host1.root.lock();
         let descriptor = RootedRc::new(&host1.root, Descriptor { open: true });
 
         // Process 0 has a reference to the descriptor.
@@ -58,7 +56,7 @@ pub fn main() {
             .get_mut(&0)
             .unwrap()
             .descriptors
-            .insert(0, descriptor.clone(&host1_lock));
+            .insert(0, descriptor.clone(&host1.root));
 
         // So does Process 1.
         host1.processes.insert(
@@ -72,19 +70,18 @@ pub fn main() {
             .get_mut(&1)
             .unwrap()
             .descriptors
-            .insert(0, descriptor.clone(&host1_lock));
+            .insert(0, descriptor.clone(&host1.root));
 
-        descriptor.safely_drop(&host1_lock);
+        descriptor.safely_drop(&host1.root);
     }
     hosts.insert(0, host1);
 
     // Process hosts in a worker thread
     let worker = thread::spawn(move || {
         for (host_id, host) in &mut hosts {
-            let lock = host.root.lock();
             // Dup a file descriptor. We clone RootedRc without any additional
             // atomic operations; it's protected by the host lock.
-            let descriptor = host.processes[&0].descriptors[&0].clone(&lock);
+            let descriptor = host.processes[&0].descriptors[&0].clone(&host.root);
             host.processes
                 .get_mut(&0)
                 .unwrap()
