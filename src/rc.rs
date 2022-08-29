@@ -1,4 +1,4 @@
-use crate::{Root, RootGuard, Tag};
+use crate::{Root, Tag};
 use std::cell::Cell;
 
 struct RootedRcInternal<T> {
@@ -54,11 +54,11 @@ impl<T> RootedRc<T> {
     /// Intentionally named clone to shadow Self::deref()::clone().
     ///
     /// Panics if `guard` did not originate from the associated `Root`.
-    pub fn clone(&self, guard: &RootGuard) -> Self {
+    pub fn clone(&self, root: &Root) -> Self {
         assert_eq!(
-            guard.guard.tag, self.tag,
+            root.tag, self.tag,
             "Tried using a lock for {:?} instead of {:?}",
-            guard.guard.tag, self.tag
+            root.tag, self.tag
         );
         // SAFETY: We've verified that the lock is held by inspection of the
         // lock itself. We hold a reference to the guard, guaranteeing that the
@@ -87,11 +87,11 @@ impl<T> RootedRc<T> {
     /// safely cleaned up. In debug builds this will result in a `panic`.
     /// Otherwise the underlying reference count will simply not be decremented,
     /// ultimately resulting in the enclosed value never being dropped.
-    pub fn safely_drop(mut self, guard: &RootGuard) {
+    pub fn safely_drop(mut self, root: &Root) {
         assert_eq!(
-            guard.guard.tag, self.tag,
+            root.tag, self.tag,
             "Tried using a lock for {:?} instead of {:?}",
-            guard.guard.tag, self.tag
+            root.tag, self.tag
         );
         let drop_internal = {
             // SAFETY: pointer points to valid data by construction.
@@ -159,9 +159,8 @@ mod test_rooted_rc {
     #[test]
     fn construct_and_drop() {
         let root = Root::new();
-        let lock = root.lock();
         let rc = RootedRc::new(&root, 0);
-        rc.safely_drop(&lock)
+        rc.safely_drop(&root)
     }
 
     #[test]
@@ -176,11 +175,10 @@ mod test_rooted_rc {
         let root = Root::new();
         let rc = RootedRc::new(&root, 0);
         thread::spawn(move || {
-            // Can access immutably without lock.
+            // Can access immutably
             let _ = *rc + 2;
-            // Need lock to drop, since it mutates refcount.
-            let lock = root.lock();
-            rc.safely_drop(&lock);
+            // Need to explicitly drop, since it mutates refcount.
+            rc.safely_drop(&root);
         })
         .join()
         .unwrap();
@@ -191,13 +189,13 @@ mod test_rooted_rc {
         let root = Root::new();
         let root = thread::spawn(move || {
             let rc = RootedRc::new(&root, 0);
-            rc.safely_drop(&root.lock());
+            rc.safely_drop(&root);
             root
         })
         .join()
         .unwrap();
         let rc = RootedRc::new(&root, 0);
-        rc.safely_drop(&root.lock());
+        rc.safely_drop(&root);
     }
 
     #[test]
@@ -206,39 +204,38 @@ mod test_rooted_rc {
         let rc = RootedRc::new(&root, 0);
 
         // Create a clone of rc that we'll pass to worker thread.
-        let rc_thread = rc.clone(&root.lock());
+        let rc_thread = rc.clone(&root);
 
         // Worker takes ownership of rc_thread and root;
         // Returns ownership of root.
         let root = thread::spawn(move || {
             let _ = *rc_thread;
-            // Need lock to drop, since it mutates refcount.
-            rc_thread.safely_drop(&root.lock());
+            rc_thread.safely_drop(&root);
             root
         })
         .join()
         .unwrap();
 
         // Take the lock to drop rc
-        rc.safely_drop(&root.lock());
+        rc.safely_drop(&root);
     }
 
     #[test]
     fn threads_contend_over_lock() {
-        let root = Arc::new(Root::new());
-        let rc = RootedRc::new(&root, 0);
+        let root = Arc::new(std::sync::Mutex::new(Root::new()));
+        let rc = RootedRc::new(&root.lock().unwrap(), 0);
 
         let threads: Vec<_> = (0..100)
             .map(|_| {
                 // Create a clone of rc that we'll pass to worker thread.
-                let rc = rc.clone(&root.lock());
+                let rc = rc.clone(&root.lock().unwrap());
                 let root = root.clone();
 
                 thread::spawn(move || {
-                    let lock = root.lock();
-                    let rc2 = rc.clone(&lock);
-                    rc.safely_drop(&lock);
-                    rc2.safely_drop(&lock);
+                    let rootlock = root.lock().unwrap();
+                    let rc2 = rc.clone(&rootlock);
+                    rc.safely_drop(&rootlock);
+                    rc2.safely_drop(&rootlock);
                 })
             })
             .collect();
@@ -247,6 +244,6 @@ mod test_rooted_rc {
             handle.join().unwrap();
         }
 
-        rc.safely_drop(&root.lock());
+        rc.safely_drop(&root.lock().unwrap());
     }
 }

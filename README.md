@@ -19,10 +19,10 @@ since the Hosts would then not be `Send`.
 We could use `Arc`, but this would introduce a lot of new costly atomic operations.
 
 Here we encode Shadow's original safety model into Rust's type system. Shadow's
-host lock is replaced with a `crate::Root`, which can be locked.  Instances of
+host lock is replaced with a `crate::Root`, which is `!Sync`.  Instances of
 `crate::rc::RootedRc` and `crate::refcell::RootedRefCell` are associated with a
-`Root`, and require the caller to prove they hold that `Root`'s lock; this allows
-them to avoid having to perform any additional atomic operations.
+`Root`, and require the caller to prove they hold a reference to that `Root`;
+this allows them to avoid having to perform any additional atomic operations.
 
 It's not clear to me yet whether the performance gains are generally worth the
 extra complexity vs. just using more "mainstream" `Send` and `Sync` equivalents.

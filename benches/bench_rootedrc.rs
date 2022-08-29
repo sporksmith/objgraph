@@ -1,11 +1,11 @@
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
-use objgraph::{rc::RootedRc, Root, RootGuard};
+use objgraph::{rc::RootedRc, Root};
 use std::{rc::Rc, sync::Arc};
 
 #[inline(never)]
-fn rootedrc_clone_and_drop(lock: &RootGuard, x: RootedRc<()>) {
-    x.clone(lock).safely_drop(lock);
-    x.safely_drop(lock);
+fn rootedrc_clone_and_drop(root: &Root, x: RootedRc<()>) {
+    x.clone(root).safely_drop(root);
+    x.safely_drop(root);
 }
 
 #[inline(never)]
@@ -21,15 +21,16 @@ fn rc_clone_and_drop(x: Rc<i32>) -> i32 {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let root = Root::new();
-
     {
-        let lock = root.lock();
         let mut group = c.benchmark_group("clone and drop");
         group.bench_function("RootedRc", |b| {
             b.iter_batched(
-                || RootedRc::new(&root, ()),
-                |x| rootedrc_clone_and_drop(&lock, x),
+                || {
+                    let root = Root::new();
+                    let rc = RootedRc::new(&root, ());
+                    (root, rc)
+                },
+                |(root, rc)| rootedrc_clone_and_drop(&root, rc),
                 BatchSize::SmallInput,
             );
         });
@@ -54,14 +55,12 @@ fn criterion_benchmark(c: &mut Criterion) {
                         core_affinity::set_for_current(setup_core_id);
                         let root = Root::new();
                         let mut v = Vec::new();
-                        let lock = root.lock();
                         for _ in 0..black_box(N) {
                             v.push(RootedRc::new(&root, ()));
                             // No atomic operation here, but for consistency with Arc benchmark.
-                            let t = v.last().unwrap().clone(&lock);
-                            t.safely_drop(&lock);
+                            let t = v.last().unwrap().clone(&root);
+                            t.safely_drop(&root);
                         }
-                        drop(lock);
                         (root, core_ids, v)
                     })
                     .join()
@@ -69,17 +68,16 @@ fn criterion_benchmark(c: &mut Criterion) {
                 },
                 |(root, core_ids, v)| {
                     std::thread::spawn(move || {
-                        let lock = root.lock();
                         for core_id in core_ids {
                             core_affinity::set_for_current(core_id);
                             for rc in &v {
-                                let v = rc.clone(&lock);
-                                v.safely_drop(&lock);
+                                let v = rc.clone(&root);
+                                v.safely_drop(&root);
                             }
                         }
                         // Safely drop contents of v
                         for rc in v {
-                            rc.safely_drop(&lock);
+                            rc.safely_drop(&root);
                         }
                     })
                     .join()

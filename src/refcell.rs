@@ -1,4 +1,4 @@
-use crate::{Root, RootGuard, Tag};
+use crate::{Root, Tag};
 use std::cell::{Cell, UnsafeCell};
 
 /// Analagous to `std::cell::RefCell`. In particular like `RefCell` and unlike
@@ -33,13 +33,13 @@ impl<T> RootedRefCell<T> {
         // This 'a statically enforces that the root lock can't be dropped
         // while the returned guard is still outstanding. i.e. it is part
         // of the safety proof for making Self Send and Sync.
-        root_guard: &'a RootGuard<'a>,
+        root: &'a Root,
     ) -> RootedRefCellRef<'a, T> {
         // Prove that the lock is held for this tag.
         assert_eq!(
-            root_guard.guard.tag, self.tag,
+            root.tag, self.tag,
             "Expected {:?} Got {:?}",
-            self.tag, root_guard.guard.tag
+            self.tag, root.tag
         );
 
         assert!(!self.writer.get());
@@ -55,13 +55,13 @@ impl<T> RootedRefCell<T> {
     pub fn borrow_mut<'a>(
         &'a self,
         // 'a required here for safety, as for `borrow`.
-        root_guard: &'a RootGuard<'a>,
+        root: &'a Root,
     ) -> RootedRefCellRefMut<'a, T> {
         // Prove that the lock is held for this tag.
         assert_eq!(
-            root_guard.guard.tag, self.tag,
+            root.tag, self.tag,
             "Expected {:?} Got {:?}",
-            self.tag, root_guard.guard.tag
+            self.tag, root.tag
         );
 
         assert!(!self.writer.get());
@@ -136,7 +136,6 @@ mod test_rooted_refcell {
     #[test]
     fn construct_and_drop() {
         let root = Root::new();
-        let _lock = root.lock();
         let _ = RootedRefCell::new(&root, 0);
     }
 
@@ -145,29 +144,21 @@ mod test_rooted_refcell {
         let root = Root::new();
         let rc = RootedRc::new(&root, RootedRefCell::new(&root, 0));
         let root = {
-            let rc = {
-                let lock = root.lock();
-                rc.clone(&lock)
-            };
+            let rc = { rc.clone(&root) };
             thread::spawn(move || {
-                let lock = root.lock();
-                let mut borrow = rc.borrow_mut(&lock);
+                let mut borrow = rc.borrow_mut(&root);
                 *borrow = 3;
                 // Drop rc with lock still held.
                 drop(borrow);
-                rc.safely_drop(&lock);
-                drop(lock);
+                rc.safely_drop(&root);
                 root
             })
             .join()
             .unwrap()
         };
-        // Lock root again ourselves to inspect and drop rc.
-        let lock = root.lock();
-        let borrow = rc.borrow(&lock);
+        let borrow = rc.borrow(&root);
         assert_eq!(*borrow, 3);
         drop(borrow);
-        rc.safely_drop(&lock);
-        drop(lock);
+        rc.safely_drop(&root);
     }
 }

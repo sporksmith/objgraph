@@ -3,10 +3,7 @@
 
 use std::{
     marker::PhantomData,
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Mutex, MutexGuard,
-    },
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use once_cell::sync::OnceCell;
@@ -54,29 +51,24 @@ impl Tag {
     }
 }
 
-struct InnerRoot {
-    tag: Tag,
-}
-
 /// Root of an "object graph". Locking a `Root` allows inexpensive access
 /// to associated `RootedRc`s and `RootedRefCell`s.
 pub struct Root {
-    root: Mutex<InnerRoot>,
     tag: Tag,
+
+    // RootedRc and RootedRefCell rely on `Root` being `!Sync`. They take
+    // immutable/shared references to Self to prove that no other thread
+    // currently has access.
+    _notsync: std::marker::PhantomData<std::cell::Cell<()>>,
 }
 
 impl Root {
     pub fn new() -> Self {
         let tag = Tag::new();
         Self {
-            root: std::sync::Mutex::new(InnerRoot { tag }),
             tag,
+            _notsync: PhantomData,
         }
-    }
-
-    pub fn lock(&self) -> RootGuard {
-        let lock = self.root.lock().unwrap();
-        RootGuard::new(lock)
     }
 
     /// This root's globally unique tag.
@@ -91,50 +83,5 @@ impl Default for Root {
     }
 }
 
-/// Used to prove ownership of the corresponding `Root` lock.
-pub struct RootGuard<'a> {
-    guard: MutexGuard<'a, InnerRoot>,
-    // RootedRc and RootedRefCell rely on `RootGuard` being `!Sync`. They take
-    // immutable/shared references to Self to prove that no other thread
-    // currently has access.
-    //
-    // Alternatively, those APIs could change to require `&mut RootGuard`, but I
-    // think that makes it more difficult to use.
-    _notsync: std::marker::PhantomData<std::cell::Cell<()>>,
-}
-
-impl<'a> RootGuard<'a> {
-    fn new(guard: MutexGuard<'a, InnerRoot>) -> Self {
-        Self {
-            guard,
-            _notsync: PhantomData,
-        }
-    }
-}
 pub mod rc;
 pub mod refcell;
-
-mod export {
-    use super::*;
-
-    #[no_mangle]
-    pub unsafe extern "C" fn root_new() -> *mut Root {
-        Box::into_raw(Box::new(Root::new()))
-    }
-
-    #[no_mangle]
-    pub unsafe extern "C" fn root_free(root: *mut Root) {
-        unsafe { Box::from_raw(root) };
-    }
-
-    #[no_mangle]
-    pub unsafe extern "C" fn root_lock(root: *const Root) -> *mut RootGuard<'static> {
-        let root = unsafe { root.as_ref() }.unwrap();
-        Box::into_raw(Box::new(root.lock()))
-    }
-
-    #[no_mangle]
-    pub unsafe extern "C" fn rootguard_free(guard: *mut RootGuard) {
-        unsafe { Box::from_raw(guard) };
-    }
-}
